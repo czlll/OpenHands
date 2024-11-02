@@ -33,33 +33,36 @@ Learn more at [docs.all-hands.dev](https://docs.all-hands.dev), or jump to the [
 
 ## ⚡ Quick Start
 
-The easiest way to run OpenHands is in Docker. You can change `WORKSPACE_BASE` below to
-point OpenHands to existing code that you'd like to modify.
-
-See the [Getting Started](https://docs.all-hands.dev/modules/usage/getting-started) guide for
+The easiest way to run OpenHands is in Docker.
+See the [Installation](https://docs.all-hands.dev/modules/usage/installation) guide for
 system requirements and more information.
 
 ```bash
-export WORKSPACE_BASE=$(pwd)/workspace
+docker pull docker.all-hands.dev/all-hands-ai/runtime:0.12-nikolaik
 
-docker run -it --pull=always \
-    -e SANDBOX_RUNTIME_CONTAINER_IMAGE=ghcr.io/all-hands-ai/runtime:0.9-nikolaik \
-    -e SANDBOX_USER_ID=$(id -u) \
-    -e WORKSPACE_MOUNT_PATH=$WORKSPACE_BASE \
-    -v $WORKSPACE_BASE:/opt/workspace_base \
+docker run -it --rm --pull=always \
+    -e SANDBOX_RUNTIME_CONTAINER_IMAGE=docker.all-hands.dev/all-hands-ai/runtime:0.12-nikolaik \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -p 3000:3000 \
     --add-host host.docker.internal:host-gateway \
-    --name openhands-app-$(date +%Y%m%d%H%M%S) \
-    ghcr.io/all-hands-ai/openhands:0.9
+    --name openhands-app \
+    docker.all-hands.dev/all-hands-ai/openhands:0.12
 ```
 
 You'll find OpenHands running at [http://localhost:3000](http://localhost:3000)!
 
-You can also run OpenHands in a scriptable [headless mode](https://docs.all-hands.dev/modules/usage/how-to/headless-mode),
-or as an [interactive CLI](https://docs.all-hands.dev/modules/usage/how-to/cli-mode).
+Finally, you'll need a model provider and API key.
+[Anthropic's Claude 3.5 Sonnet](https://www.anthropic.com/api) (`anthropic/claude-3-5-sonnet-20241022`)
+works best, but you have [many options](https://docs.all-hands.dev/modules/usage/llms).
 
-Visit [Getting Started](https://docs.all-hands.dev/modules/usage/getting-started) for more information and setup instructions.
+---
+
+You can also [connect OpenHands to your local filesystem](https://docs.all-hands.dev/modules/usage/runtimes),
+run OpenHands in a scriptable [headless mode](https://docs.all-hands.dev/modules/usage/how-to/headless-mode),
+interact with it via a [friendly CLI](https://docs.all-hands.dev/modules/usage/how-to/cli-mode),
+or run it on tagged issues with [a github action](https://github.com/All-Hands-AI/OpenHands-resolver).
+
+Visit [Installation](https://docs.all-hands.dev/modules/usage/installation) for more information and setup instructions.
 
 If you want to modify the OpenHands source code, check out [Development.md](https://github.com/All-Hands-AI/OpenHands/blob/main/Development.md).
 
@@ -114,8 +117,8 @@ For a list of open source projects and licenses used in OpenHands, please see ou
 ## 📚 Cite
 
 ```
-@misc{opendevin,
-      title={{OpenDevin: An Open Platform for AI Software Developers as Generalist Agents}},
+@misc{openhands,
+      title={{OpenHands: An Open Platform for AI Software Developers as Generalist Agents}},
       author={Xingyao Wang and Boxuan Li and Yufan Song and Frank F. Xu and Xiangru Tang and Mingchen Zhuge and Jiayi Pan and Yueqi Song and Bowen Li and Jaskirat Singh and Hoang H. Tran and Fuqiang Li and Ren Ma and Mingzhang Zheng and Bill Qian and Yanjun Shao and Niklas Muennighoff and Yizhe Zhang and Binyuan Hui and Junyang Lin and Robert Brennan and Hao Peng and Heng Ji and Graham Neubig},
       year={2024},
       eprint={2407.16741},

@@ -1,50 +1,68 @@
-import asyncio
 import copy
+import os
+import time
 import warnings
 from functools import partial
-from typing import Union
+from typing import Any
+
+import requests
 
 from openhands.core.config import LLMConfig
 
 with warnings.catch_warnings():
     warnings.simplefilter('ignore')
     import litellm
+from litellm import ModelInfo, PromptTokensDetails
 from litellm import completion as litellm_completion
 from litellm import completion_cost as litellm_completion_cost
 from litellm.exceptions import (
     APIConnectionError,
-    ContentPolicyViolationError,
+    APIError,
     InternalServerError,
-    NotFoundError,
-    OpenAIError,
     RateLimitError,
     ServiceUnavailableError,
 )
-from litellm.types.utils import CostPerToken
-from tenacity import (
-    retry,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_exponential,
-)
+from litellm.types.utils import CostPerToken, ModelResponse, Usage
 
-from openhands.core.exceptions import LLMResponseError, UserCancelledError
-from openhands.core.logger import llm_prompt_logger, llm_response_logger
+from openhands.core.exceptions import CloudFlareBlockageError
 from openhands.core.logger import openhands_logger as logger
-from openhands.core.message import Message, format_messages
-from openhands.core.metrics import Metrics
+from openhands.core.message import Message
+from openhands.llm.debug_mixin import DebugMixin
+from openhands.llm.metrics import Metrics
+from openhands.llm.retry_mixin import RetryMixin
 
 __all__ = ['LLM']
 
-message_separator = '\n\n----------\n\n'
+# tuple of exceptions to retry on
+LLM_RETRY_EXCEPTIONS: tuple[type[Exception], ...] = (
+    APIConnectionError,
+    # FIXME: APIError is useful on 502 from a proxy for example,
+    # but it also retries on other errors that are permanent
+    APIError,
+    InternalServerError,
+    RateLimitError,
+    ServiceUnavailableError,
+)
 
-cache_prompting_supported_models = [
+# cache prompt supporting models
+# remove this when we gemini and deepseek are supported
+CACHE_PROMPT_SUPPORTED_MODELS = [
+    'claude-3-5-sonnet-20241022',
     'claude-3-5-sonnet-20240620',
     'claude-3-haiku-20240307',
+    'claude-3-opus-20240229',
+]
+
+# function calling supporting models
+FUNCTION_CALLING_SUPPORTED_MODELS = [
+    'claude-3-5-sonnet-20240620',
+    'claude-3-5-sonnet-20241022',
+    'gpt-4o',
+    'gpt-4o-mini',
 ]
 
 
-class LLM:
+class LLM(RetryMixin, DebugMixin):
     """The LLM class represents a Language Model instance.
 
     Attributes:
@@ -61,36 +79,74 @@ class LLM:
         Passing simple parameters always overrides config.
 
         Args:
-            config: The LLM configuration
+            config: The LLM configuration.
+            metrics: The metrics to use.
         """
-        self.metrics = metrics if metrics is not None else Metrics()
-        self.cost_metric_supported = True
-        self.config = copy.deepcopy(config)
-
-        # Set up config attributes with default values to prevent AttributeError
-        LLMConfig.set_missing_attributes(self.config)
+        self.metrics: Metrics = (
+            metrics if metrics is not None else Metrics(model_name=config.model)
+        )
+        self.cost_metric_supported: bool = True
+        self.config: LLMConfig = copy.deepcopy(config)
 
         # litellm actually uses base Exception here for unknown model
-        self.model_info = None
+        self.model_info: ModelInfo | None = None
+
         try:
             if self.config.model.startswith('openrouter'):
                 self.model_info = litellm.get_model_info(self.config.model)
-            else:
+        except Exception as e:
+            logger.debug(f'Error getting model info: {e}')
+
+        if self.config.model.startswith('litellm_proxy/'):
+            # IF we are using LiteLLM proxy, get model info from LiteLLM proxy
+            # GET {base_url}/v1/model/info with litellm_model_id as path param
+            response = requests.get(
+                f'{self.config.base_url}/v1/model/info',
+                headers={'Authorization': f'Bearer {self.config.api_key}'},
+            )
+            resp_json = response.json()
+            if 'data' not in resp_json:
+                logger.error(
+                    f'Error getting model info from LiteLLM proxy: {resp_json}'
+                )
+            all_model_info = resp_json.get('data', [])
+            current_model_info = next(
+                (
+                    info
+                    for info in all_model_info
+                    if info['model_name']
+                    == self.config.model.removeprefix('litellm_proxy/')
+                ),
+                None,
+            )
+            if current_model_info:
+                self.model_info = current_model_info['model_info']
+
+        # Last two attempts to get model info from NAME
+        if not self.model_info:
+            try:
                 self.model_info = litellm.get_model_info(
                     self.config.model.split(':')[0]
                 )
-        # noinspection PyBroadException
-        except Exception as e:
-            logger.warning(f'Could not get model info for {config.model}:\n{e}')
+            # noinspection PyBroadException
+            except Exception:
+                pass
+        if not self.model_info:
+            try:
+                self.model_info = litellm.get_model_info(
+                    self.config.model.split('/')[-1]
+                )
+            # noinspection PyBroadException
+            except Exception:
+                pass
+        logger.debug(f'Model info: {self.model_info}')
 
-        # Tuple of exceptions to retry on
-        self.retry_exceptions = (
-            APIConnectionError,
-            ContentPolicyViolationError,
-            InternalServerError,
-            OpenAIError,
-            RateLimitError,
-        )
+        if self.config.log_completions:
+            if self.config.log_completions_folder is None:
+                raise RuntimeError(
+                    'log_completions_folder is required when log_completions is enabled'
+                )
+            os.makedirs(self.config.log_completions_folder, exist_ok=True)
 
         # Set the max tokens in an LM-specific way if not set
         if self.config.max_input_tokens is None:
@@ -101,22 +157,23 @@ class LLM:
             ):
                 self.config.max_input_tokens = self.model_info['max_input_tokens']
             else:
-                # Max input tokens for gpt3.5, so this is a safe fallback for any potentially viable model
+                # Safe fallback for any potentially viable model
                 self.config.max_input_tokens = 4096
 
         if self.config.max_output_tokens is None:
-            if (
-                self.model_info is not None
-                and 'max_output_tokens' in self.model_info
-                and isinstance(self.model_info['max_output_tokens'], int)
-            ):
-                self.config.max_output_tokens = self.model_info['max_output_tokens']
-            else:
-                # Max output tokens for gpt3.5, so this is a safe fallback for any potentially viable model
-                self.config.max_output_tokens = 1024
-
-        if self.config.drop_params:
-            litellm.drop_params = self.config.drop_params
+            # Safe default for any potentially viable model
+            self.config.max_output_tokens = 4096
+            if self.model_info is not None:
+                # max_output_tokens has precedence over max_tokens, if either exists.
+                # litellm has models with both, one or none of these 2 parameters!
+                if 'max_output_tokens' in self.model_info and isinstance(
+                    self.model_info['max_output_tokens'], int
+                ):
+                    self.config.max_output_tokens = self.model_info['max_output_tokens']
+                elif 'max_tokens' in self.model_info and isinstance(
+                    self.model_info['max_tokens'], int
+                ):
+                    self.config.max_output_tokens = self.model_info['max_tokens']
 
         self._completion = partial(
             litellm_completion,
@@ -129,71 +186,55 @@ class LLM:
             timeout=self.config.timeout,
             temperature=self.config.temperature,
             top_p=self.config.top_p,
+            drop_params=self.config.drop_params,
         )
 
         if self.vision_is_active():
             logger.debug('LLM: model has vision enabled')
+        if self.is_caching_prompt_active():
+            logger.debug('LLM: caching prompt enabled')
+        if self.is_function_calling_active():
+            logger.debug('LLM: model supports function calling')
 
         completion_unwrapped = self._completion
 
-        def attempt_on_error(retry_state):
-            """Custom attempt function for litellm completion."""
-            logger.error(
-                f'{retry_state.outcome.exception()}. Attempt #{retry_state.attempt_number} | You can customize retry values in the configuration.',
-                exc_info=False,
-            )
-            return None
-
-        def custom_completion_wait(retry_state):
-            """Custom wait function for litellm completion."""
-            if not retry_state:
-                return 0
-            exception = retry_state.outcome.exception() if retry_state.outcome else None
-            if exception is None:
-                return 0
-
-            min_wait_time = self.config.retry_min_wait
-            max_wait_time = self.config.retry_max_wait
-
-            # for rate limit errors, wait 1 minute by default, max 4 minutes between retries
-            exception_type = type(exception).__name__
-            logger.error(f'\nexception_type: {exception_type}\n')
-
-            if exception_type == 'RateLimitError':
-                min_wait_time = 60
-                max_wait_time = 240
-            elif exception_type == 'BadRequestError' and exception.response:
-                # this should give us the burried, actual error message from
-                # the LLM model.
-                logger.error(f'\n\nBadRequestError: {exception.response}\n\n')
-
-            # Return the wait time using exponential backoff
-            exponential_wait = wait_exponential(
-                multiplier=self.config.retry_multiplier,
-                min=min_wait_time,
-                max=max_wait_time,
-            )
-
-            # Call the exponential wait function with retry_state to get the actual wait time
-            return exponential_wait(retry_state)
-
-        @retry(
-            after=attempt_on_error,
-            stop=stop_after_attempt(self.config.num_retries),
-            reraise=True,
-            retry=retry_if_exception_type(self.retry_exceptions),
-            wait=custom_completion_wait,
+        @self.retry_decorator(
+            num_retries=self.config.num_retries,
+            retry_exceptions=LLM_RETRY_EXCEPTIONS,
+            retry_min_wait=self.config.retry_min_wait,
+            retry_max_wait=self.config.retry_max_wait,
+            retry_multiplier=self.config.retry_multiplier,
         )
         def wrapper(*args, **kwargs):
             """Wrapper for the litellm completion function. Logs the input and output of the completion function."""
-            # some callers might just send the messages directly
-            if 'messages' in kwargs:
-                messages = kwargs['messages']
-            else:
-                messages = args[1] if len(args) > 1 else []
+            messages: list[dict[str, Any]] | dict[str, Any] = []
 
-            # this serves to prevent empty messages and logging the messages
-            debug_message = self._get_debug_message(messages)
+            # some callers might send the model and messages directly
+            # litellm allows positional args, like completion(model, messages, **kwargs)
+            if len(args) > 1:
+                # ignore the first argument if it's provided (it would be the model)
+                # design wise: we don't allow overriding the configured values
+                # implementation wise: the partial function set the model as a kwarg already
+                # as well as other kwargs
+                messages = args[1] if len(args) > 1 else args[0]
+                kwargs['messages'] = messages
+
+                # remove the first args, they're sent in kwargs
+                args = args[2:]
+            elif 'messages' in kwargs:
+                messages = kwargs['messages']
+
+            # ensure we work with a list of messages
+            messages = messages if isinstance(messages, list) else [messages]
+
+            # if we have no messages, something went very wrong
+            if not messages:
+                raise ValueError(
+                    'The messages list is empty. At least one message is required.'
+                )
+
+            # log the entire LLM prompt
+            self.log_prompt(messages)
 
             if self.is_caching_prompt_active():
                 # Anthropic-specific prompt caching
@@ -202,215 +243,54 @@ class LLM:
                         'anthropic-beta': 'prompt-caching-2024-07-31',
                     }
 
-            # skip if messages is empty (thus debug_message is empty)
-            if debug_message:
-                llm_prompt_logger.debug(debug_message)
-                resp = completion_unwrapped(*args, **kwargs)
-            else:
-                logger.debug('No completion messages!')
-                resp = {'choices': [{'message': {'content': ''}}]}
-
-            # log the response
-            message_back = resp['choices'][0]['message']['content']
-            if message_back:
-                llm_response_logger.debug(message_back)
-
-                # post-process to log costs
-                self._post_completion(resp)
-
-            return resp
-
-        self._completion = wrapper  # type: ignore
-
-        # Async version
-        self._async_completion = partial(
-            self._call_acompletion,
-            model=self.config.model,
-            api_key=self.config.api_key,
-            base_url=self.config.base_url,
-            api_version=self.config.api_version,
-            custom_llm_provider=self.config.custom_llm_provider,
-            max_tokens=self.config.max_output_tokens,
-            timeout=self.config.timeout,
-            temperature=self.config.temperature,
-            top_p=self.config.top_p,
-            drop_params=True,
-        )
-
-        async_completion_unwrapped = self._async_completion
-
-        @retry(
-            after=attempt_on_error,
-            stop=stop_after_attempt(self.config.num_retries),
-            reraise=True,
-            retry=retry_if_exception_type(self.retry_exceptions),
-            wait=custom_completion_wait,
-        )
-        async def async_completion_wrapper(*args, **kwargs):
-            """Async wrapper for the litellm acompletion function."""
-            # some callers might just send the messages directly
-            if 'messages' in kwargs:
-                messages = kwargs['messages']
-            else:
-                messages = args[1] if len(args) > 1 else []
-
-            # this serves to prevent empty messages and logging the messages
-            debug_message = self._get_debug_message(messages)
-
-            async def check_stopped():
-                while True:
-                    if (
-                        hasattr(self.config, 'on_cancel_requested_fn')
-                        and self.config.on_cancel_requested_fn is not None
-                        and await self.config.on_cancel_requested_fn()
-                    ):
-                        raise UserCancelledError('LLM request cancelled by user')
-                    await asyncio.sleep(0.1)
-
-            stop_check_task = asyncio.create_task(check_stopped())
-
             try:
-                # Directly call and await litellm_acompletion
-                if debug_message:
-                    llm_prompt_logger.debug(debug_message)
-                    resp = await async_completion_unwrapped(*args, **kwargs)
-                else:
-                    logger.debug('No completion messages!')
-                    resp = {'choices': [{'message': {'content': ''}}]}
+                # we don't support streaming here, thus we get a ModelResponse
+                resp: ModelResponse = completion_unwrapped(*args, **kwargs)
+                # log for evals or other scripts that need the raw completion
+                if self.config.log_completions:
+                    assert self.config.log_completions_folder is not None
+                    log_file = os.path.join(
+                        self.config.log_completions_folder,
+                        # use the metric model name (for draft editor)
+                        f'{self.metrics.model_name.replace("/", "__")}-{time.time()}.json',
+                    )
+                    from openhands.core.utils import json
 
-                # skip if messages is empty (thus debug_message is empty)
-                if debug_message:
-                    message_back = resp['choices'][0]['message']['content']
-                    llm_response_logger.debug(message_back)
-                else:
-                    resp = {'choices': [{'message': {'content': ''}}]}
-                self._post_completion(resp)
-
-                # We do not support streaming in this method, thus return resp
-                return resp
-
-            except UserCancelledError:
-                logger.info('LLM request cancelled by user.')
-                raise
-            except (
-                APIConnectionError,
-                ContentPolicyViolationError,
-                InternalServerError,
-                NotFoundError,
-                OpenAIError,
-                RateLimitError,
-                ServiceUnavailableError,
-            ) as e:
-                logger.error(f'Completion Error occurred:\n{e}')
-                raise
-
-            finally:
-                await asyncio.sleep(0.1)
-                stop_check_task.cancel()
-                try:
-                    await stop_check_task
-                except asyncio.CancelledError:
-                    pass
-
-        @retry(
-            after=attempt_on_error,
-            stop=stop_after_attempt(self.config.num_retries),
-            reraise=True,
-            retry=retry_if_exception_type(self.retry_exceptions),
-            wait=custom_completion_wait,
-        )
-        async def async_acompletion_stream_wrapper(*args, **kwargs):
-            """Async wrapper for the litellm acompletion with streaming function."""
-            # some callers might just send the messages directly
-            if 'messages' in kwargs:
-                messages = kwargs['messages']
-            else:
-                messages = args[1] if len(args) > 1 else []
-
-            # log the prompt
-            debug_message = ''
-            for message in messages:
-                debug_message += message_separator + message['content']
-            llm_prompt_logger.debug(debug_message)
-
-            try:
-                # Directly call and await litellm_acompletion
-                resp = await async_completion_unwrapped(*args, **kwargs)
-
-                # For streaming we iterate over the chunks
-                async for chunk in resp:
-                    # Check for cancellation before yielding the chunk
-                    if (
-                        hasattr(self.config, 'on_cancel_requested_fn')
-                        and self.config.on_cancel_requested_fn is not None
-                        and await self.config.on_cancel_requested_fn()
-                    ):
-                        raise UserCancelledError(
-                            'LLM request cancelled due to CANCELLED state'
+                    with open(log_file, 'w') as f:
+                        f.write(
+                            json.dumps(
+                                {
+                                    'messages': messages,
+                                    'response': resp,
+                                    'args': args,
+                                    'kwargs': {
+                                        k: v
+                                        for k, v in kwargs.items()
+                                        if k != 'messages'
+                                    },
+                                    'timestamp': time.time(),
+                                    'cost': self._completion_cost(resp),
+                                },
+                            )
                         )
-                    # with streaming, it is "delta", not "message"!
-                    message_back = chunk['choices'][0]['delta']['content']
-                    llm_response_logger.debug(message_back)
-                    self._post_completion(chunk)
 
-                    yield chunk
+                message_back: str = resp['choices'][0]['message']['content']
 
-            except UserCancelledError:
-                logger.info('LLM request cancelled by user.')
-                raise
-            except (
-                APIConnectionError,
-                ContentPolicyViolationError,
-                InternalServerError,
-                NotFoundError,
-                OpenAIError,
-                RateLimitError,
-                ServiceUnavailableError,
-            ) as e:
-                logger.error(f'Completion Error occurred:\n{e}')
+                # log the LLM response
+                self.log_response(message_back)
+
+                # post-process the response
+                self._post_completion(resp)
+
+                return resp
+            except APIError as e:
+                if 'Attention Required! | Cloudflare' in str(e):
+                    raise CloudFlareBlockageError(
+                        'Request blocked by CloudFlare'
+                    ) from e
                 raise
 
-            finally:
-                if kwargs.get('stream', False):
-                    await asyncio.sleep(0.1)
-
-        self._async_completion = async_completion_wrapper  # type: ignore
-        self._async_streaming_completion = async_acompletion_stream_wrapper  # type: ignore
-
-    def _get_debug_message(self, messages):
-        if not messages:
-            return ''
-
-        messages = messages if isinstance(messages, list) else [messages]
-        return message_separator.join(
-            self._format_message_content(msg) for msg in messages if msg['content']
-        )
-
-    def _format_message_content(self, message):
-        content = message['content']
-        if isinstance(content, list):
-            return self._format_list_content(content)
-        return str(content)
-
-    def _format_list_content(self, content_list):
-        return '\n'.join(
-            self._format_content_element(element) for element in content_list
-        )
-
-    def _format_content_element(self, element):
-        if isinstance(element, dict):
-            if 'text' in element:
-                return element['text']
-            if (
-                self.vision_is_active()
-                and 'image_url' in element
-                and 'url' in element['image_url']
-            ):
-                return element['image_url']['url']
-        return str(element)
-
-    async def _call_acompletion(self, *args, **kwargs):
-        return await litellm.acompletion(*args, **kwargs)
+        self._completion = wrapper
 
     @property
     def completion(self):
@@ -418,32 +298,7 @@ class LLM:
 
         Check the complete documentation at https://litellm.vercel.app/docs/completion
         """
-        try:
-            return self._completion
-        except Exception as e:
-            raise LLMResponseError(e)
-
-    @property
-    def async_completion(self):
-        """Decorator for the async litellm acompletion function.
-
-        Check the complete documentation at https://litellm.vercel.app/docs/providers/ollama#example-usage---streaming--acompletion
-        """
-        try:
-            return self._async_completion
-        except Exception as e:
-            raise LLMResponseError(e)
-
-    @property
-    def async_streaming_completion(self):
-        """Decorator for the async litellm acompletion function with streaming.
-
-        Check the complete documentation at https://litellm.vercel.app/docs/providers/ollama#example-usage---streaming--acompletion
-        """
-        try:
-            return self._async_streaming_completion
-        except Exception as e:
-            raise LLMResponseError(e)
+        return self._completion
 
     def vision_is_active(self):
         return not self.config.disable_vision and self._supports_vision()
@@ -454,65 +309,100 @@ class LLM:
         Returns:
             bool: True if model is vision capable. If model is not supported by litellm, it will return False.
         """
-        try:
-            return litellm.supports_vision(self.config.model)
-        except Exception:
-            return False
-
-    def is_caching_prompt_active(self) -> bool:
-        """Check if prompt caching is enabled and supported for current model.
-
-        Returns:
-            boolean: True if prompt caching is active for the given model.
-        """
-        return self.config.caching_prompt is True and any(
-            model in self.config.model for model in cache_prompting_supported_models
+        # litellm.supports_vision currently returns False for 'openai/gpt-...' or 'anthropic/claude-...' (with prefixes)
+        # but model_info will have the correct value for some reason.
+        # we can go with it, but we will need to keep an eye if model_info is correct for Vertex or other providers
+        # remove when litellm is updated to fix https://github.com/BerriAI/litellm/issues/5608
+        return litellm.supports_vision(self.config.model) or (
+            self.model_info is not None
+            and self.model_info.get('supports_vision', False)
         )
 
-    def _post_completion(self, response) -> None:
-        """Post-process the completion response."""
+    def is_caching_prompt_active(self) -> bool:
+        """Check if prompt caching is supported and enabled for current model.
+
+        Returns:
+            boolean: True if prompt caching is supported and enabled for the given model.
+        """
+        return (
+            self.config.caching_prompt is True
+            and self.model_info is not None
+            and self.model_info.get('supports_prompt_caching', False)
+            and (
+                self.config.model in CACHE_PROMPT_SUPPORTED_MODELS
+                or self.config.model.split('/')[-1] in CACHE_PROMPT_SUPPORTED_MODELS
+            )
+        )
+
+    def is_function_calling_active(self) -> bool:
+        # Check if model name is in supported list before checking model_info
+        model_name_supported = (
+            self.config.model in FUNCTION_CALLING_SUPPORTED_MODELS
+            or self.config.model.split('/')[-1] in FUNCTION_CALLING_SUPPORTED_MODELS
+            or any(m in self.config.model for m in FUNCTION_CALLING_SUPPORTED_MODELS)
+        )
+        return model_name_supported and (
+            self.model_info is not None
+            and self.model_info.get('supports_function_calling', False)
+        )
+
+    def _post_completion(self, response: ModelResponse) -> None:
+        """Post-process the completion response.
+
+        Logs the cost and usage stats of the completion call.
+        """
         try:
-            cur_cost = self.completion_cost(response)
+            cur_cost = self._completion_cost(response)
         except Exception:
             cur_cost = 0
 
         stats = ''
         if self.cost_metric_supported:
+            # keep track of the cost
             stats = 'Cost: %.2f USD | Accumulated Cost: %.2f USD\n' % (
                 cur_cost,
                 self.metrics.accumulated_cost,
             )
 
-        usage = response.get('usage')
+        usage: Usage | None = response.get('usage')
 
         if usage:
+            # keep track of the input and output tokens
             input_tokens = usage.get('prompt_tokens')
             output_tokens = usage.get('completion_tokens')
 
             if input_tokens:
-                stats += 'Input tokens: ' + str(input_tokens) + '\n'
+                stats += 'Input tokens: ' + str(input_tokens)
 
             if output_tokens:
-                stats += 'Output tokens: ' + str(output_tokens) + '\n'
-
-            model_extra = usage.get('model_extra', {})
-
-            cache_creation_input_tokens = model_extra.get('cache_creation_input_tokens')
-            if cache_creation_input_tokens:
                 stats += (
-                    'Input tokens (cache write): '
-                    + str(cache_creation_input_tokens)
+                    (' | ' if input_tokens else '')
+                    + 'Output tokens: '
+                    + str(output_tokens)
                     + '\n'
                 )
 
-            cache_read_input_tokens = model_extra.get('cache_read_input_tokens')
-            if cache_read_input_tokens:
-                stats += (
-                    'Input tokens (cache read): ' + str(cache_read_input_tokens) + '\n'
-                )
+            # read the prompt cache hit, if any
+            prompt_tokens_details: PromptTokensDetails = usage.get(
+                'prompt_tokens_details'
+            )
+            cache_hit_tokens = (
+                prompt_tokens_details.cached_tokens if prompt_tokens_details else None
+            )
+            if cache_hit_tokens:
+                stats += 'Input tokens (cache hit): ' + str(cache_hit_tokens) + '\n'
 
+            # For Anthropic, the cache writes have a different cost than regular input tokens
+            # but litellm doesn't separate them in the usage stats
+            # so we can read it from the provider-specific extra field
+            model_extra = usage.get('model_extra', {})
+            cache_write_tokens = model_extra.get('cache_creation_input_tokens')
+            if cache_write_tokens:
+                stats += 'Input tokens (cache write): ' + str(cache_write_tokens) + '\n'
+
+        # log the stats
         if stats:
-            logger.info(stats)
+            logger.debug(stats)
 
     def get_token_count(self, messages):
         """Get the number of tokens in a list of messages.
@@ -529,7 +419,7 @@ class LLM:
             # TODO: this is to limit logspam in case token count is not supported
             return 0
 
-    def is_local(self):
+    def _is_local(self):
         """Determines if the system is using a locally running LLM.
 
         Returns:
@@ -544,7 +434,7 @@ class LLM:
                 return True
         return False
 
-    def completion_cost(self, response):
+    def _completion_cost(self, response):
         """Calculate the cost of a completion response based on the model.  Local models are treated as free.
         Add the current cost into total cost in metrics.
 
@@ -566,19 +456,21 @@ class LLM:
                 input_cost_per_token=self.config.input_cost_per_token,
                 output_cost_per_token=self.config.output_cost_per_token,
             )
-            logger.info(f'Using custom cost per token: {cost_per_token}')
+            logger.debug(f'Using custom cost per token: {cost_per_token}')
             extra_kwargs['custom_cost_per_token'] = cost_per_token
 
-        if not self.is_local():
-            try:
+        try:
+            # try directly get response_cost from response
+            cost = getattr(response, '_hidden_params', {}).get('response_cost', None)
+            if cost is None:
                 cost = litellm_completion_cost(
                     completion_response=response, **extra_kwargs
                 )
-                self.metrics.add_cost(cost)
-                return cost
-            except Exception:
-                self.cost_metric_supported = False
-                logger.warning('Cost calculation not supported for this model.')
+            self.metrics.add_cost(cost)
+            return cost
+        except Exception:
+            self.cost_metric_supported = False
+            logger.debug('Cost calculation not supported for this model.')
         return 0.0
 
     def __str__(self):
@@ -592,11 +484,16 @@ class LLM:
         return str(self)
 
     def reset(self):
-        self.metrics = Metrics()
+        self.metrics.reset()
 
-    def format_messages_for_llm(
-        self, messages: Union[Message, list[Message]]
-    ) -> list[dict]:
-        return format_messages(
-            messages, self.vision_is_active(), self.is_caching_prompt_active()
-        )
+    def format_messages_for_llm(self, messages: Message | list[Message]) -> list[dict]:
+        if isinstance(messages, Message):
+            messages = [messages]
+
+        # set flags to know how to serialize the messages
+        for message in messages:
+            message.cache_enabled = self.is_caching_prompt_active()
+            message.vision_enabled = self.vision_is_active()
+
+        # let pydantic handle the serialization
+        return [message.model_dump() for message in messages]

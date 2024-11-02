@@ -1,23 +1,37 @@
 import asyncio
 import time
+from dataclasses import dataclass, field
+from typing import Optional
 
 from fastapi import WebSocket
 
 from openhands.core.config import AppConfig
 from openhands.core.logger import openhands_logger as logger
+from openhands.events.stream import session_exists
+from openhands.runtime.utils.shutdown_listener import should_continue
+from openhands.server.session.conversation import Conversation
 from openhands.server.session.session import Session
 from openhands.storage.files import FileStore
 
 
+@dataclass
 class SessionManager:
-    _sessions: dict[str, Session] = {}
+    config: AppConfig
+    file_store: FileStore
     cleanup_interval: int = 300
     session_timeout: int = 600
+    _sessions: dict[str, Session] = field(default_factory=dict)
+    _session_cleanup_task: Optional[asyncio.Task] = None
 
-    def __init__(self, config: AppConfig, file_store: FileStore):
-        asyncio.create_task(self._cleanup_sessions())
-        self.config = config
-        self.file_store = file_store
+    async def __aenter__(self):
+        if not self._session_cleanup_task:
+            self._session_cleanup_task = asyncio.create_task(self._cleanup_sessions())
+        return self
+
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        if self._session_cleanup_task:
+            self._session_cleanup_task.cancel()
+            self._session_cleanup_task = None
 
     def add_or_restart_session(self, sid: str, ws_conn: WebSocket) -> Session:
         if sid in self._sessions:
@@ -32,11 +46,23 @@ class SessionManager:
             return None
         return self._sessions.get(sid)
 
+    async def attach_to_conversation(self, sid: str) -> Conversation | None:
+        if not session_exists(sid, self.file_store):
+            return None
+        c = Conversation(sid, file_store=self.file_store, config=self.config)
+        await c.connect()
+        return c
+
+    async def detach_from_conversation(self, conversation: Conversation):
+        await conversation.disconnect()
+
     async def send(self, sid: str, data: dict[str, object]) -> bool:
         """Sends data to the client."""
-        if sid not in self._sessions:
+        session = self.get_session(sid)
+        if session is None:
+            logger.error(f'*** No session found for {sid}, skipping message ***')
             return False
-        return await self._sessions[sid].send(data)
+        return await session.send(data)
 
     async def send_error(self, sid: str, message: str) -> bool:
         """Sends an error message to the client."""
@@ -47,7 +73,7 @@ class SessionManager:
         return await self.send(sid, {'message': message})
 
     async def _cleanup_sessions(self):
-        while True:
+        while should_continue():
             current_time = time.time()
             session_ids_to_remove = []
             for sid, session in list(self._sessions.items()):
@@ -62,7 +88,7 @@ class SessionManager:
                 to_del_session: Session | None = self._sessions.pop(sid, None)
                 if to_del_session is not None:
                     await to_del_session.close()
-                    logger.info(
+                    logger.debug(
                         f'Session {sid} and related resource have been removed due to inactivity.'
                     )
 

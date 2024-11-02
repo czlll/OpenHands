@@ -27,9 +27,10 @@ from openhands.core.config import (
 )
 from openhands.core.logger import openhands_logger as logger
 from openhands.core.main import create_runtime, run_controller
-from openhands.events.action import CmdRunAction
+from openhands.events.action import CmdRunAction, MessageAction
 from openhands.events.observation import CmdOutputObservation
-from openhands.runtime.runtime import Runtime
+from openhands.runtime.base import Runtime
+from openhands.utils.async_utils import call_async_from_sync
 
 AGENT_CLS_TO_FAKE_USER_RESPONSE_FN = {
     'CodeActAgent': functools.partial(
@@ -274,18 +275,15 @@ def process_instance(
     # NOTE: You can actually set slightly different instruction for different agents
     instruction += AGENT_CLS_TO_INST_SUFFIX[metadata.agent_class]
 
-    # use a session id for concurrent evaluation
-    sid = instance.instance_id.replace('/', '__')
-
-    runtime = create_runtime(config, sid=sid)
-
+    runtime = create_runtime(config)
+    call_async_from_sync(runtime.connect)
     initialize_runtime(runtime, instance)
 
     # Here's how you can run the agent (similar to the `main` function) and get the final task state
     state: State | None = asyncio.run(
         run_controller(
             config=config,
-            task_str=instruction,
+            initial_user_action=MessageAction(content=instruction),
             runtime=runtime,
             fake_user_response_fn=AGENT_CLS_TO_FAKE_USER_RESPONSE_FN[
                 metadata.agent_class

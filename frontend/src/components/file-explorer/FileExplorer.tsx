@@ -5,18 +5,21 @@ import {
   IoIosRefresh,
   IoIosCloudUpload,
 } from "react-icons/io";
+import { useRevalidator } from "@remix-run/react";
 import { useDispatch, useSelector } from "react-redux";
 import { IoFileTray } from "react-icons/io5";
 import { useTranslation } from "react-i18next";
 import { twMerge } from "tailwind-merge";
 import AgentState from "#/types/AgentState";
 import { setRefreshID } from "#/state/codeSlice";
-import { listFiles, uploadFiles } from "#/services/fileService";
 import IconButton from "../IconButton";
 import ExplorerTree from "./ExplorerTree";
 import toast from "#/utils/toast";
 import { RootState } from "#/store";
 import { I18nKey } from "#/i18n/declaration";
+import OpenHands from "#/api/open-hands";
+import { useFiles } from "#/context/files";
+import { isOpenHandsErrorResponse } from "#/api/open-hands.utils";
 
 interface ExplorerActionsProps {
   onRefresh: () => void;
@@ -87,10 +90,18 @@ function ExplorerActions({
   );
 }
 
-function FileExplorer() {
-  const [isHidden, setIsHidden] = React.useState(false);
+interface FileExplorerProps {
+  isOpen: boolean;
+  onToggle: () => void;
+  error: string | null;
+}
+
+function FileExplorer({ error, isOpen, onToggle }: FileExplorerProps) {
+  const { revalidate } = useRevalidator();
+
+  const { paths, setPaths } = useFiles();
   const [isDragging, setIsDragging] = React.useState(false);
-  const [files, setFiles] = React.useState<string[] | null>(null);
+
   const { curAgentState } = useSelector((state: RootState) => state.agent);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const dispatch = useDispatch();
@@ -99,7 +110,7 @@ function FileExplorer() {
     fileInputRef.current?.click(); // Trigger the file browser
   };
 
-  const refreshWorkspace = async () => {
+  const refreshWorkspace = () => {
     if (
       curAgentState === AgentState.LOADING ||
       curAgentState === AgentState.STOPPED
@@ -107,19 +118,15 @@ function FileExplorer() {
       return;
     }
     dispatch(setRefreshID(Math.random()));
-    try {
-      const fileList = await listFiles();
-      setFiles(fileList);
-    } catch (error) {
-      toast.error("refresh-error", t(I18nKey.EXPLORER$REFRESH_ERROR_MESSAGE));
-    }
+    OpenHands.getFiles().then(setPaths);
+    revalidate();
   };
 
-  const uploadFileData = async (toAdd: FileList) => {
+  const uploadFileData = async (files: FileList) => {
     try {
-      const result = await uploadFiles(toAdd);
+      const result = await OpenHands.uploadFiles(Array.from(files));
 
-      if (result.error) {
+      if (isOpenHandsErrorResponse(result)) {
         // Handle error response
         toast.error(
           `upload-error-${new Date().getTime()}`,
@@ -128,8 +135,8 @@ function FileExplorer() {
         return;
       }
 
-      const uploadedCount = result.uploadedFiles.length;
-      const skippedCount = result.skippedFiles.length;
+      const uploadedCount = result.uploaded_files.length;
+      const skippedCount = result.skipped_files.length;
 
       if (uploadedCount > 0) {
         toast.success(
@@ -151,8 +158,8 @@ function FileExplorer() {
         toast.info(t(I18nKey.EXPLORER$NO_FILES_UPLOADED_MESSAGE));
       }
 
-      await refreshWorkspace();
-    } catch (error) {
+      refreshWorkspace();
+    } catch (e) {
       // Handle unexpected errors (network issues, etc.)
       toast.error(
         `upload-error-${new Date().getTime()}`,
@@ -162,40 +169,31 @@ function FileExplorer() {
   };
 
   React.useEffect(() => {
-    (async () => {
-      await refreshWorkspace();
-    })();
+    refreshWorkspace();
   }, [curAgentState]);
 
-  React.useEffect(() => {
-    const enableDragging = () => {
-      setIsDragging(true);
-    };
-
-    const disableDragging = () => {
-      setIsDragging(false);
-    };
-
-    document.addEventListener("dragenter", enableDragging);
-    document.addEventListener("drop", disableDragging);
-
-    return () => {
-      document.removeEventListener("dragenter", enableDragging);
-      document.removeEventListener("drop", disableDragging);
-    };
-  }, []);
-
   return (
-    <div className="relative h-full">
+    <div
+      data-testid="file-explorer"
+      className="relative h-full"
+      onDragEnter={() => {
+        setIsDragging(true);
+      }}
+      onDragEnd={() => {
+        setIsDragging(false);
+      }}
+    >
       {isDragging && (
         <div
           data-testid="dropzone"
+          onDragLeave={() => setIsDragging(false)}
           onDrop={(event) => {
             event.preventDefault();
             const { files: droppedFiles } = event.dataTransfer;
             if (droppedFiles.length > 0) {
               uploadFileData(droppedFiles);
             }
+            setIsDragging(false);
           }}
           onDragOver={(event) => event.preventDefault()}
           className="z-10 absolute flex flex-col justify-center items-center bg-black top-0 bottom-0 left-0 right-0 opacity-65"
@@ -208,36 +206,43 @@ function FileExplorer() {
       )}
       <div
         className={twMerge(
-          "bg-neutral-800 h-full border-r-1 border-r-neutral-600 flex flex-col transition-all ease-soft-spring",
-          isHidden ? "w-12" : "w-60",
+          "bg-neutral-800 h-full border-r-1 border-r-neutral-600 flex flex-col",
+          !isOpen ? "w-12" : "w-60",
         )}
       >
         <div className="flex flex-col relative h-full px-3 py-2">
-          <div className="sticky top-0 bg-neutral-800 z-10">
+          <div className="sticky top-0 bg-neutral-800">
             <div
               className={twMerge(
                 "flex items-center",
-                isHidden ? "justify-center" : "justify-between",
+                !isOpen ? "justify-center" : "justify-between",
               )}
             >
-              {!isHidden && (
+              {isOpen && (
                 <div className="text-neutral-300 font-bold text-sm">
                   {t(I18nKey.EXPLORER$LABEL_WORKSPACE)}
                 </div>
               )}
               <ExplorerActions
-                isHidden={isHidden}
-                toggleHidden={() => setIsHidden((prev) => !prev)}
+                isHidden={!isOpen}
+                toggleHidden={onToggle}
                 onRefresh={refreshWorkspace}
                 onUpload={selectFileInput}
               />
             </div>
           </div>
-          <div className="overflow-auto flex-grow">
-            <div style={{ display: isHidden ? "none" : "block" }}>
-              <ExplorerTree files={files} />
+          {!error && (
+            <div className="overflow-auto flex-grow">
+              <div style={{ display: !isOpen ? "none" : "block" }}>
+                <ExplorerTree files={paths} />
+              </div>
             </div>
-          </div>
+          )}
+          {error && (
+            <div className="flex flex-col items-center justify-center h-full">
+              <p className="text-neutral-300 text-sm">{error}</p>
+            </div>
+          )}
         </div>
         <input
           data-testid="file-input"

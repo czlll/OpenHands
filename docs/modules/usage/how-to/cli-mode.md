@@ -8,7 +8,7 @@ This mode is different from the [headless mode](headless-mode), which is non-int
 
 To start an interactive OpenHands session via the command line, follow these steps:
 
-1. Ensure you have followed the [Development setup instructions](https://github.com/All-Hands-AI/OpenHands/blob/main/Development.md)
+1. Ensure you have followed the [Development setup instructions](https://github.com/All-Hands-AI/OpenHands/blob/main/Development.md).
 
 2. Run the following command:
 
@@ -35,13 +35,14 @@ WORKSPACE_BASE=$(pwd)/workspace
 2. Set `LLM_MODEL` to the model you want to use:
 
 ```bash
-LLM_MODEL="anthropic/claude-3-5-sonnet-20240620"
+LLM_MODEL="anthropic/claude-3-5-sonnet-20241022"
+
 ```
 
 3. Set `LLM_API_KEY` to your API key:
 
 ```bash
-LLM_API_KEY="abcde"
+LLM_API_KEY="sk_test_12345"
 ```
 
 4. Run the following Docker command:
@@ -49,6 +50,7 @@ LLM_API_KEY="abcde"
 ```bash
 docker run -it \
     --pull=always \
+    -e SANDBOX_RUNTIME_CONTAINER_IMAGE=docker.all-hands.dev/all-hands-ai/runtime:0.12-nikolaik \
     -e SANDBOX_USER_ID=$(id -u) \
     -e WORKSPACE_MOUNT_PATH=$WORKSPACE_BASE \
     -e LLM_API_KEY=$LLM_API_KEY \
@@ -57,7 +59,7 @@ docker run -it \
     -v /var/run/docker.sock:/var/run/docker.sock \
     --add-host host.docker.internal:host-gateway \
     --name openhands-app-$(date +%Y%m%d%H%M%S) \
-    ghcr.io/all-hands-ai/openhands:0.9 \
+    docker.all-hands.dev/all-hands-ai/openhands:0.12 \
     python -m openhands.core.cli
 ```
 

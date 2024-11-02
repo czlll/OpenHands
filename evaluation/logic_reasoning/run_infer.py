@@ -29,7 +29,8 @@ from openhands.events.action import (
     MessageAction,
 )
 from openhands.events.observation import CmdOutputObservation
-from openhands.runtime.runtime import Runtime
+from openhands.runtime.base import Runtime
+from openhands.utils.async_utils import call_async_from_sync
 
 AGENT_CLS_TO_FAKE_USER_RESPONSE_FN = {
     'CodeActAgent': codeact_user_response,
@@ -52,7 +53,7 @@ def get_config(
             base_container_image='xingyaoww/od-eval-logic-reasoning:v1.0',
             enable_auto_lint=True,
             use_host_network=False,
-            runtime_extra_deps='$OD_INTERPRETER_PATH -m pip install scitools-pyke',
+            runtime_extra_deps='$OH_INTERPRETER_PATH -m pip install scitools-pyke',
         ),
         # do not mount workspace
         workspace_base=None,
@@ -201,17 +202,15 @@ def process_instance(
     # NOTE: You can actually set slightly different instruction for different agents
     instruction += AGENT_CLS_TO_INST_SUFFIX[metadata.agent_class]
 
-    # use a session id for concurrent evaluation
-    sid = instance['instance_id']
-
-    runtime = create_runtime(config, sid=sid)
+    runtime = create_runtime(config)
+    call_async_from_sync(runtime.connect)
     initialize_runtime(runtime, instance)
 
     # Here's how you can run the agent (similar to the `main` function) and get the final task state
     state: State | None = asyncio.run(
         run_controller(
             config=config,
-            task_str=instruction,
+            initial_user_action=MessageAction(content=instruction),
             runtime=runtime,
             fake_user_response_fn=AGENT_CLS_TO_FAKE_USER_RESPONSE_FN.get(
                 metadata.agent_class

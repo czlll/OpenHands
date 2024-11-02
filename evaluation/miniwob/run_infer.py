@@ -30,11 +30,12 @@ from openhands.events.action import (
     MessageAction,
 )
 from openhands.events.observation import CmdOutputObservation
+from openhands.runtime.base import Runtime
 from openhands.runtime.browser.browser_env import (
     BROWSER_EVAL_GET_GOAL_ACTION,
     BROWSER_EVAL_GET_REWARDS_ACTION,
 )
-from openhands.runtime.runtime import Runtime
+from openhands.utils.async_utils import call_async_from_sync
 
 SUPPORTED_AGENT_CLS = {'BrowsingAgent'}
 
@@ -126,13 +127,15 @@ def process_instance(
     else:
         logger.info(f'Starting evaluation for instance {env_id}.')
 
-    runtime = create_runtime(config, sid=env_id)
+    runtime = create_runtime(config)
+    call_async_from_sync(runtime.connect)
     task_str = initialize_runtime(runtime)
-
     state: State | None = asyncio.run(
         run_controller(
             config=config,
-            task_str=task_str,  # take output from initialize_runtime
+            initial_user_action=MessageAction(
+                content=task_str
+            ),  # take output from initialize_runtime
             runtime=runtime,
         )
     )

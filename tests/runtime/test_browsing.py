@@ -1,9 +1,8 @@
-"""Browsing-related tests for the EventStreamRuntime, which connects to the RuntimeClient running in the sandbox."""
+"""Browsing-related tests for the EventStreamRuntime, which connects to the ActionExecutor running in the sandbox."""
 
 import json
-import time
 
-from conftest import _load_runtime
+from conftest import _close_test_runtime, _load_runtime
 
 from openhands.core.logger import openhands_logger as logger
 from openhands.events.action import (
@@ -20,11 +19,11 @@ from openhands.events.observation import (
 # Browsing tests
 # ============================================================================================================================
 
-PY3_FOR_TESTING = '/openhands/miniforge3/bin/mamba run -n base python3'
+PY3_FOR_TESTING = '/openhands/micromamba/bin/micromamba run -n openhands python3'
 
 
-def test_simple_browse(temp_dir, box_class, run_as_openhands):
-    runtime = _load_runtime(temp_dir, box_class, run_as_openhands)
+def test_simple_browse(temp_dir, runtime_cls, run_as_openhands):
+    runtime = _load_runtime(temp_dir, runtime_cls, run_as_openhands)
 
     # Test browse
     action_cmd = CmdRunAction(
@@ -66,17 +65,17 @@ def test_simple_browse(temp_dir, box_class, run_as_openhands):
     logger.info(obs, extra={'msg_type': 'OBSERVATION'})
     assert obs.exit_code == 0
 
-    runtime.close(rm_all_containers=False)
-    time.sleep(1)
+    _close_test_runtime(runtime)
 
 
-def test_browsergym_eval_env(box_class, temp_dir):
+def test_browsergym_eval_env(runtime_cls, temp_dir):
     runtime = _load_runtime(
         temp_dir,
-        box_class=box_class,
+        runtime_cls=runtime_cls,
         run_as_openhands=False,  # need root permission to access file
         base_container_image='xingyaoww/od-eval-miniwob:v1.0',
         browsergym_eval_env='browsergym/miniwob.choose-list',
+        force_rebuild_runtime=True,
     )
     from openhands.runtime.browser.browser_env import (
         BROWSER_EVAL_GET_GOAL_ACTION,
@@ -111,5 +110,4 @@ def test_browsergym_eval_env(box_class, temp_dir):
     logger.info(obs, extra={'msg_type': 'OBSERVATION'})
     assert json.loads(obs.content) == [0.0]
 
-    runtime.close(rm_all_containers=False)
-    time.sleep(1)
+    _close_test_runtime(runtime)

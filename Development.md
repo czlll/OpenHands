@@ -5,12 +5,14 @@ Otherwise, you can clone the OpenHands project directly.
 
 ## Start the server for development
 ### 1. Requirements
-* Linux, Mac OS, or [WSL on Windows](https://learn.microsoft.com/en-us/windows/wsl/install)  [ Ubuntu <= 22.04]
+* Linux, Mac OS, or [WSL on Windows](https://learn.microsoft.com/en-us/windows/wsl/install)  [Ubuntu <= 22.04]
 * [Docker](https://docs.docker.com/engine/install/) (For those on MacOS, make sure to allow the default Docker socket to be used from advanced settings!)
-* [Python](https://www.python.org/downloads/) = 3.11
+* [Python](https://www.python.org/downloads/) = 3.12
 * [NodeJS](https://nodejs.org/en/download/package-manager) >= 18.17.1
 * [Poetry](https://python-poetry.org/docs/#installing-with-the-official-installer) >= 1.8
-* netcat => sudo apt-get install netcat
+* OS-specific dependencies:
+  - Ubuntu: build-essential => `sudo apt-get install build-essential`
+  - WSL: netcat => `sudo apt-get install netcat`
 
 Make sure you have all these dependencies installed before moving on to `make build`.
 
@@ -22,8 +24,8 @@ If you want to develop without system admin/sudo access to upgrade/install `Pyth
 curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
 bash Miniforge3-$(uname)-$(uname -m).sh
 
-# Install Python 3.11, nodejs, and poetry
-mamba install python=3.11
+# Install Python 3.12, nodejs, and poetry
+mamba install python=3.12
 mamba install conda-forge::nodejs
 mamba install conda-forge::poetry
 ```
@@ -91,9 +93,36 @@ To run tests, refer to the following:
 poetry run pytest ./tests/unit/test_*.py
 ```
 
-#### Integration tests
-Please refer to [this README](./tests/integration/README.md) for details.
-
 ### 9. Add or update dependency
 1. Add your dependency in `pyproject.toml` or use `poetry add xxx`
 2. Update the poetry.lock file via `poetry lock --no-update`
+
+### 9. Use existing Docker image
+To reduce build time (e.g., if no changes were made to the client-runtime component), you can use an existing Docker container image. Follow these steps:
+1. Set the SANDBOX_RUNTIME_CONTAINER_IMAGE environment variable to the desired Docker image.
+2. Example: export SANDBOX_RUNTIME_CONTAINER_IMAGE=ghcr.io/all-hands-ai/runtime:0.9-nikolaik
+
+## Develop inside Docker container
+
+TL;DR
+
+```bash
+make docker-dev
+```
+
+See more details [here](./containers/dev/README.md)
+
+If you are just interested in running `OpenHands` without installing all the required tools on your host.
+
+```bash
+make docker-run
+```
+
+If you do not have `make` on your host, run:
+
+```bash
+cd ./containers/dev
+./dev.sh
+```
+
+You do need [Docker](https://docs.docker.com/engine/install/) installed on your host though.

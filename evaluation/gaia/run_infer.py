@@ -28,7 +28,8 @@ from openhands.core.logger import openhands_logger as logger
 from openhands.core.main import create_runtime, run_controller
 from openhands.events.action import AgentFinishAction, CmdRunAction, MessageAction
 from openhands.events.observation import CmdOutputObservation
-from openhands.runtime.runtime import Runtime
+from openhands.runtime.base import Runtime
+from openhands.utils.async_utils import call_async_from_sync
 
 DATASET_CACHE_DIR = os.path.join(os.path.dirname(__file__), 'data')
 
@@ -51,7 +52,7 @@ def get_config(
         runtime='eventstream',
         max_iterations=metadata.max_iterations,
         sandbox=SandboxConfig(
-            base_container_image='python:3.11-bookworm',
+            base_container_image='python:3.12-bookworm',
             enable_auto_lint=True,
             use_host_network=False,
         ),
@@ -141,14 +142,15 @@ def process_instance(
     instruction += AGENT_CLS_TO_INST_SUFFIX.get(metadata.agent_class, '')
     logger.info(f'Instruction:\n{instruction}', extra={'msg_type': 'OBSERVATION'})
 
-    runtime = create_runtime(config, sid=instance['instance_id'])
+    runtime = create_runtime(config)
+    call_async_from_sync(runtime.connect)
     initialize_runtime(runtime, instance)
 
     # Here's how you can run the agent (similar to the `main` function) and get the final task state
     state: State | None = asyncio.run(
         run_controller(
             config=config,
-            task_str=instruction,
+            initial_user_action=MessageAction(content=instruction),
             runtime=runtime,
             fake_user_response_fn=AGENT_CLS_TO_FAKE_USER_RESPONSE_FN[
                 metadata.agent_class
