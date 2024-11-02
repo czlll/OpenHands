@@ -1,0 +1,5 @@
+from project.OpenHands.agenthub.searching_agent.searching_agent import SearchingAgent
+
+from openhands.controller.agent import Agent
+
+Agent.register('SearchingAgent', SearchingAgent)

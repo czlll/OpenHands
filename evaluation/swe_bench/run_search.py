@@ -38,15 +38,40 @@ USE_INSTANCE_IMAGE = os.environ.get('USE_INSTANCE_IMAGE', 'false').lower() == 't
 
 AGENT_CLS_TO_FAKE_USER_RESPONSE_FN = {
     'CodeActAgent': codeact_user_response,
-    'SearchAgent': codeact_user_response,
+    'SearchingAgent': codeact_user_response,
     'CodeActSWEAgent': codeact_user_response,
 }
 
 AGENT_CLS_TO_INST_SUFFIX = {
     'CodeActAgent': 'When you think you have fixed the issue through code changes, please run the following command: <execute_bash> exit </execute_bash>.\n',
-    'SearchAgent': 'When you think you have fixed the issue through code changes, please run the following command: <execute_bash> exit </execute_bash>.\n',
+    'SearchingAgent': 'When you think you have found all the related locations and have listed them out, please run the following command: <execute_bash> exit </execute_bash>.\n',
     'CodeActSWEAgent': 'When you think you have fixed the issue through code changes, please run the following command: <execute_bash> exit </execute_bash>.\n',
 }
+
+OUTPUT_FORMAT = """
+# Output Format:
+Your final output should list the locations requiring modification, wrapped with triple backticks ```
+Each location should include the file path, class name (if applicable), function or method name, and line numbers, ordered by importance.
+
+## Examples:
+```
+full_path1/file1.py
+line: 10
+class: MyClass1
+line: 51
+
+full_path2/file2.py
+function: MyClass2.my_method
+line: 12
+
+full_path3/file3.py
+function: my_function
+line: 24
+line: 156
+```
+
+Return just the location(s)
+"""
 
 
 def _get_swebench_workspace_dir_name(instance: pd.Series) -> str:
@@ -71,8 +96,10 @@ def get_instruction(instance: pd.Series, metadata: EvalMetadata):
     else:
         # Testing general agents
         instruction = (
-            f'Please fix the following issue for the repository in /workspace/{workspace_dir_name}.\n'
+            # 'You will be provided with a GitHub problem description. Your objective is to localize the specific files, classes, functions, or variable declarations that require modification or contain essential information to resolve the issue.'
+            f'To fix the following issue for the repository in /workspace/{workspace_dir_name}, now you should first localize the specific files, classes, functions, or variable declarations that require modification or contain essential information to resolve the issue.\n'
             'Environment has been set up for you to start working. You may assume all necessary tools are installed.\n\n'
+            f'Issue ID: `{instance.instance_id}`\n'
             '# Problem Statement\n'
             f'{instance.problem_statement}\n\n'
         )
@@ -80,11 +107,13 @@ def get_instruction(instance: pd.Series, metadata: EvalMetadata):
             instruction += f'# Hints\n{instance.hints_text}\n\n'
         instruction += (
             'IMPORTANT: You should ONLY interact with the environment provided to you AND NEVER ASK FOR HUMAN HELP.\n'
-            'You should NOT modify any existing test case files. If needed, you can add new test cases in a NEW file to reproduce the issue.\n'
-            'You SHOULD INCLUDE PROPER INDENTATION in your edit commands.\n'
+            'You should NOT modify any files!\n'
+            # 'If needed, you can add new test cases in a NEW file to reproduce the issue.\n'
+            # 'You SHOULD INCLUDE PROPER INDENTATION in your edit commands.\n'
         )
 
     # NOTE: You can actually set slightly different instruction for different agents
+    instruction += OUTPUT_FORMAT
     instruction += AGENT_CLS_TO_INST_SUFFIX[metadata.agent_class]
     return instruction
 
