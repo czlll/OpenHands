@@ -4,10 +4,10 @@ from openhands.runtime.plugins.agent_skills import (
     AgentSkillsRequirement,
 )
 from openhands.runtime.plugins.jupyter import JupyterPlugin, JupyterRequirement
-from openhands.runtime.plugins.location_tools import (
-    LocationToolsPlugin,
-    LocationToolsRequirement,
-)
+# from openhands.runtime.plugins.location_tools import (
+#     LocationToolsPlugin,
+#     LocationToolsRequirement,
+# )
 from openhands.runtime.plugins.requirement import Plugin, PluginRequirement
 
 __all__ = [
@@ -23,6 +23,5 @@ __all__ = [
 
 ALL_PLUGINS = {
     'jupyter': JupyterPlugin,
-    'agent_skills': AgentSkillsPlugin,
-    'location_tools': LocationToolsPlugin,
+    'agent_skills': AgentSkillsPlugin
 }

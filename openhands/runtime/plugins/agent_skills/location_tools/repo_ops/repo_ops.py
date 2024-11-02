@@ -425,7 +425,7 @@ def search_class(class_name: str, file_pattern: Optional[str] = None) -> str:
         file_pattern: Optional[str]: A glob pattern to filter search results to specific file types or directories. If None, the search includes all files.
 
     Returns:
-        str: A formatted string containing the search results for each specified class, including code snippets of their definitions.
+        str: A formatted string containing the search results for specified class, including code snippets of their definitions.
     """
 
     files, classes, _ = get_current_repo_modules()
@@ -728,7 +728,7 @@ def search_in_repo(
         result += f"Searching for '{term}' ...\n\n## Searching Result:\n"
         cur_result = ''
         if term in all_class_names:
-            cur_result += search_class_structures([term], file_pattern)
+            cur_result += search_class(term, file_pattern)
         if term in all_function_names:
             cur_result += search_method(term, file_pattern)
             if 'Found no results' in cur_result:
