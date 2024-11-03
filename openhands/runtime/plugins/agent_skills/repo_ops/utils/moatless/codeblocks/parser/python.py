@@ -1,7 +1,6 @@
 import logging
 
-import tree_sitter_python as tspython
-from tree_sitter import Language
+from tree_sitter_languages import get_language
 
 from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.codeblocks import (
     CodeBlock,
@@ -25,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 class PythonParser(CodeParser):
     def __init__(self, **kwargs):
-        language = Language(tspython.language(), 'python')
+        language = get_language('python')
 
         super().__init__(language, **kwargs)
 
