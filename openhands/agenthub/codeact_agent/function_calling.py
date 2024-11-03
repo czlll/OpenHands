@@ -215,6 +215,86 @@ LLMBasedFileEditTool = ChatCompletionToolParam(
     ),
 )
 
+_SEARCHCALLREL_DESCRIPTION = """Analyzes the dependencies of a specific class, or function.
+* Identify how the given module interact with other parts of the codebase.
+* This is useful for understanding the broader impact of any changes or issues and ensuring that all related components are accounted for.
+
+** Examples:
+search_invoke_and_reference("function_1", "path/to/file1.py", "function")
+search_invoke_and_reference("class_A", "path/to/file2.py", "class")
+"""
+
+SearchCallRelTool = ChatCompletionToolParam(
+    type='function',
+    function=ChatCompletionToolParamFunctionChunk(
+        name='search_invoke_and_reference',
+        description=_SEARCHCALLREL_DESCRIPTION,
+        parameters={
+            'type': 'object',
+            'properties': {
+                'module_name': {
+                    'type': 'string',
+                    'description': 'The name of the module to analyze. This could refer to the name of a class or a function within the codebase. Example values: "class_A", "function_1" or "class_B.function_2".',
+                },
+                'file_path': {
+                    'type': 'string',
+                    'description': 'The full path to the file where the module resides. This helps in precisely locating the module within the codebase.',
+                },
+                'ntype': {
+                    'type': 'string',
+                    'description': 'The type of given the module to be analyzed.',
+                    'enum': ['class', 'function'],
+                },
+            },
+            'required': ['module_name', 'file_path', 'ntype'],
+        },
+    ),
+)
+
+
+_SEARCHREPO_DESCRIPTION = """This function searches for specified search terms within a repository, looking through Python files matching a given pattern.
+* Checks firstly if the term matches any class or function names.
+* if the term matches a class/function, return the class/function definitions from the codebase based on the provided class names, filtered by the file pattern if applicable.
+* if not, retrieves code snippets by first performing a BM25 search to rank documents based on the similarity to the term and then follows up with a semantic search to find more contextually similar code snippets.
+
+** Examples:
+# search class `class_A`, function `function_1` and  `class_B.function_2`
+search_in_repo(['class_A', 'function_1', 'class_B.function_2'])
+
+# search class `class_A` in file `path/to/file_1.py`
+search_in_repo(['class_A'], file_pattern='path/to/file_1.py')
+
+# search class `class_A` in directory `sub_dir`
+search_in_repo(['class_A'], file_pattern='**/sub_dir/*.py')
+
+# search code snippets related to 'order' and 'payment'
+search_in_repo(['order', 'payment'], file_pattern='**/sub_dir/*.py')
+"""
+
+SearchRepoTool = ChatCompletionToolParam(
+    type='function',
+    function=ChatCompletionToolParamFunctionChunk(
+        name='search_in_repo',
+        description=_SEARCHREPO_DESCRIPTION,
+        parameters={
+            'type': 'object',
+            'properties': {
+                'search_terms': {
+                    'type': 'array',
+                    'items': {'type': 'string'},
+                    'description': 'A list of strings representing the terms to search for within the repository. Each can be a functional description, a potential class or method name, or any relevant keywords related to the code you want to find in the repository.',
+                },
+                'file_pattern': {
+                    'type': 'string',
+                    'description': 'A glob pattern to filter search results to specific file types or directories. If None(defult value), the search includes all files.',
+                },
+            },
+            'required': ['search_terms'],
+        },
+    ),
+)
+
+
 _STR_REPLACE_EDITOR_DESCRIPTION = """Custom editing tool for viewing, creating and editing files
 * State is persistent across command calls and discussions with the user
 * If `path` is a file, `view` displays the result of applying `cat -n`. If `path` is a directory, `view` lists non-hidden files and directories up to 2 levels deep
@@ -357,6 +437,20 @@ def response_to_actions(response: ModelResponse) -> list[Action]:
                     f'TOOL CALL: str_replace_editor -> file_editor with code: {code}'
                 )
                 action = IPythonRunCellAction(code=code, include_extra=False)
+            elif tool_call.function.name == 'search_in_repo':
+                # We implement this in agent_skills, which can be used via Jupyter
+                # convert tool_call.function.arguments to kwargs that can be passed to search_in_repo
+                code = f'print(search_in_repo(**{arguments}))'
+                logger.debug(f'TOOL CALL: search_in_repo with code: {code}')
+                action = IPythonRunCellAction(code=code, include_extra=False)
+            elif tool_call.function.name == 'search_invoke_and_reference':
+                # We implement this in agent_skills, which can be used via Jupyter
+                # convert tool_call.function.arguments to kwargs that can be passed to search_invoke_and_reference
+                code = f'print(search_invoke_and_reference(**{arguments}))'
+                logger.debug(
+                    f'TOOL CALL: search_invoke_and_reference with code: {code}'
+                )
+                action = IPythonRunCellAction(code=code, include_extra=False)
             else:
                 raise RuntimeError(f'Unknown tool call: {tool_call.function.name}')
 
@@ -393,5 +487,7 @@ def get_tools(
     if codeact_enable_llm_editor:
         tools.append(LLMBasedFileEditTool)
     else:
-        tools.append(StrReplaceEditorTool)
+        # tools.append(StrReplaceEditorTool)
+        tools.append(SearchRepoTool)
+        tools.append(SearchCallRelTool)
     return tools

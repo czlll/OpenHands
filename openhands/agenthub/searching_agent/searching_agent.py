@@ -1,7 +1,7 @@
 import os
 from itertools import islice
 
-from agenthub.codeact_agent.action_parser import CodeActResponseParser
+from openhands.agenthub.codeact_agent.action_parser import CodeActResponseParser
 from openhands.controller.agent import Agent
 from openhands.controller.state.state import State
 from openhands.core.config import AgentConfig
@@ -28,7 +28,6 @@ from openhands.llm.llm import LLM
 from openhands.runtime.plugins import (
     AgentSkillsRequirement,
     JupyterRequirement,
-    LocationToolsRequirement,
     PluginRequirement,
 )
 from openhands.utils.microagent import MicroAgent
@@ -60,7 +59,6 @@ class SearchingAgent(Agent):
         # NOTE: AgentSkillsRequirement need to go before JupyterRequirement, since
         # AgentSkillsRequirement provides a lot of Python functions,
         # and it needs to be initialized before Jupyter for Jupyter to use those functions.
-        LocationToolsRequirement(),
         AgentSkillsRequirement(),
         JupyterRequirement(),
     ]
@@ -92,7 +90,7 @@ class SearchingAgent(Agent):
 
         self.prompt_manager = PromptManager(
             prompt_dir=os.path.join(os.path.dirname(__file__)),
-            agent_skills_docs=LocationToolsRequirement.documentation,
+            agent_skills_docs=AgentSkillsRequirement.documentation,
             micro_agent=self.micro_agent,
         )
 

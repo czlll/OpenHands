@@ -11,7 +11,7 @@ packages = [
 ]
 
 [tool.poetry.dependencies]
-python = "^3.12"
+python = "^3.11"
 datasets = "*"
 pandas = "*"
 litellm = "^1.51.1"
@@ -131,6 +131,21 @@ gdown = "*"
 matplotlib = "*"
 seaborn = "*"
 tabulate = "*"
+PyStemmer = "2.2.0.1"
+tree-sitter = "0.21.3"
+tree-sitter-java = "0.21.0"
+tree-sitter-python = "0.21.0"
+libcst = "1.4.0"
+instructor = "1.3.3"
+jsonref = "1.1.0"
+rapidfuzz = "3.9.3"
+faiss-cpu = "1.8.0"
+fsspec = "2024.3.1"
+astroid = "3.2.4"
+pylint = "3.2.3"
+llama-index-core = "*"
+llama-index-retrievers-bm25 = "0.3.0"
+llama-index-embeddings-azure-openai="0.2.5"
 
 [tool.poetry-dynamic-versioning]
 enable = true
