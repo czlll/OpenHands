@@ -231,4 +231,4 @@ containers/runtime/code
 **/node_modules/
 
 # data for search
-openhands/runtime/plugins/agent_skills/repo_ops/data/
+# openhands/runtime/plugins/agent_skills/repo_ops/data/
