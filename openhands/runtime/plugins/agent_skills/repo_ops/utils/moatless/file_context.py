@@ -4,7 +4,6 @@ from typing import Dict, List, Optional, Set
 
 from pydantic import BaseModel
 
-# from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks import 
 from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.codeblocks import (
     BlockSpan,
     CodeBlock,
@@ -13,8 +12,13 @@ from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.c
     SpanMarker,
     SpanType,
 )
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.repository import CodeFile, FileRepository, UpdateResult
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.types import FileWithSpans
+from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.repository import (
+    CodeFile,
+    FileRepository,
+)
+from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.types import (
+    FileWithSpans,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -148,7 +152,7 @@ class ContextFile(BaseModel):
     def _to_prompt(
         self,
         code_block: CodeBlock,
-        current_span: CurrentPromptSpan = None,
+        current_span: CurrentPromptSpan | None = None,
         show_outcommented_code: bool = True,
         outcomment_code_comment: str = '...',
         show_span_id: bool = False,
@@ -206,11 +210,6 @@ class ContextFile(BaseModel):
                 show_child = True
 
             if show_child:
-                if outcommented_block:
-                    contents += outcommented_block._to_prompt_string(
-                        show_line_numbers=show_line_numbers
-                    )
-
                 outcommented_block = None
 
                 contents += child._to_prompt_string(
@@ -297,10 +296,12 @@ class ContextFile(BaseModel):
         logger.info(f'Adding line span {start_line} - {end_line} to {self.file_path}')
         if module:
             block = module.find_first_by_start_line(start_line)
-            structure_block = block.structure_block()
-            self.spans.append(
-                ContextSpan(span_id=structure_block.belongs_to_span.span_id)
-            )
+            if block:
+                structure_block = block.structure_block()
+                if structure_block:
+                    self.spans.append(
+                        ContextSpan(span_id=structure_block.belongs_to_span.span_id)
+                    )
         else:
             logger.warning(f'Could not find module for file {self.file_path}')
 
@@ -337,21 +338,6 @@ class ContextFile(BaseModel):
             if span.span_id == span_id:
                 return span
         return None
-
-    def update_content_by_line_numbers(
-        self, start_line_index: int, end_line_index: int, replacement_content: str
-    ) -> UpdateResult:
-        update_result = self.file.update_content_by_line_numbers(
-            start_line_index, end_line_index, replacement_content
-        )
-
-        if update_result.new_span_ids:
-            logger.info(
-                f'Adding new spans: {update_result.new_span_ids} to {self.file_path}'
-            )
-            self.add_spans(update_result.new_span_ids)
-
-        return update_result
 
     def expand_context_with_init_spans(self):
         init_spans = set()
@@ -579,7 +565,7 @@ class FileContext:
             tokens_distribution.append((span, allocated_tokens))
 
         # Adjust tokens for spans with the same rank
-        rank_groups = {}
+        rank_groups: dict[int, list[tuple[RankedFileSpan, int]]] = {}
         for span, tokens in tokens_distribution:
             if span.rank not in rank_groups:
                 rank_groups[span.rank] = []
@@ -663,12 +649,6 @@ class FileContext:
 
     def context_size(self):
         return sum(file.context_size() for file in self._file_context.values())
-
-    def save_file(self, file_path: str, updated_content: Optional[str] = None):
-        self._repo.save_file(file_path, updated_content)
-
-    def save(self):
-        self._repo.save()
 
     def dict(self):
         file_dict = []

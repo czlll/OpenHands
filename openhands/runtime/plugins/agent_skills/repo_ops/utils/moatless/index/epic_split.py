@@ -9,10 +9,20 @@ from llama_index.core.node_parser.node_utils import logger
 from llama_index.core.schema import BaseNode, TextNode
 from llama_index.core.utils import get_tokenizer, get_tqdm_iterable
 
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.codeblocks import CodeBlock, CodeBlockType, PathTree
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.parser.python import PythonParser
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.index.code_node import CodeNode
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.index.settings import CommentStrategy
+from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.codeblocks import (
+    CodeBlock,
+    CodeBlockType,
+    PathTree,
+)
+from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.parser.python import (
+    PythonParser,
+)
+from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.index.code_node import (
+    CodeNode,
+)
+from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.index.settings import (
+    CommentStrategy,
+)
 
 CodeBlockChunk = List[CodeBlock]
 
@@ -412,6 +422,7 @@ class EpicSplitter(NodeParser):
 
         has_outcommented_code = False
         for i, child in enumerate(codeblock.children):
+            assert child is not None and child.identifier is not None
             child_tree = path_tree.child_tree(child.identifier)
             if child_tree and child_tree.show:
                 if has_outcommented_code and child.type not in [

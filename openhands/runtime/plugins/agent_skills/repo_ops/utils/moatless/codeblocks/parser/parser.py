@@ -6,7 +6,7 @@ from typing import Callable, List, Optional, Tuple
 
 import networkx as nx
 from llama_index.core import get_tokenizer
-from tree_sitter import Language, Node, Parser
+from tree_sitter import Language, Node, Parser, Query
 
 from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.codeblocks import (
     BlockSpan,
@@ -19,8 +19,12 @@ from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.c
     RelationshipType,
     SpanType,
 )
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.module import Module
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.parser.comment import get_comment_symbol
+from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.module import (
+    Module,
+)
+from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.parser.comment import (
+    get_comment_symbol,
+)
 
 commented_out_keywords = ['rest of the code', 'existing code', 'other code']
 child_block_types = ['ERROR', 'block']
@@ -31,14 +35,14 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class NodeMatch:
-    block_type: CodeBlockType = None
-    identifier_node: Node = None
-    first_child: Node = None
-    last_child: Node = None
-    check_child: Node = None
+    block_type: CodeBlockType | None = None
+    identifier_node: Node | None = None
+    first_child: Node | None = None
+    last_child: Node | None = None
+    check_child: Node | None = None
     parameters: List[Tuple[Node, Optional[Node]]] = field(default_factory=list)
     relationships: List[Tuple[Node, str]] = field(default_factory=list)
-    query: str = None
+    query: str | None = None
 
 
 def _find_type(node: Node, type: str):
@@ -76,7 +80,6 @@ class CodeParser:
         min_tokens_for_docs_span: int = 100,
         index_callback: Optional[Callable[[CodeBlock], None]] = None,
         tokenizer: Optional[Callable[[str], List]] = None,
-        apply_gpt_tweaks: bool = False,
         debug: bool = False,
     ):
         try:
@@ -86,21 +89,19 @@ class CodeParser:
         except Exception as e:
             logger.warning(f'Could not get parser for language {language}.')
             raise e
-        self.apply_gpt_tweaks = apply_gpt_tweaks
         self.index_callback = index_callback
         self.debug = debug
         self.encoding = encoding
-        self.gpt_queries = []
-        self.queries = []
+        self.queries: list[tuple[str, str, Query]] = []
 
         # TODO: How to handle these in a thread safe way?
-        self.spans_by_id = {}
-        self.comments_with_no_span = []
-        self._span_counter = {}
-        self._previous_block = None
+        self.spans_by_id: dict[str, BlockSpan] = {}
+        self.comments_with_no_span: list[CodeBlock] = []
+        self._span_counter: dict[str, int] = {}
+        self._previous_block: CodeBlock | None = None
 
         # TODO: Move this to CodeGraph
-        self._graph = None
+        self._graph = nx.DiGraph()
 
         self.tokenizer = tokenizer or get_tokenizer()
         self._max_tokens_in_span = max_tokens_in_span
@@ -118,9 +119,10 @@ class CodeParser:
         else:
             return None
 
-    def _build_queries(self, query_file: str):
+    def _build_queries(self, query_file: str) -> list[tuple[str, str, Query]]:
         with resources.open_text(
-            'openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.parser.queries', query_file
+            'openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.parser.queries',
+            query_file,
         ) as file:
             query_list = file.read().strip().split('\n\n')
             parsed_queries = []
@@ -149,6 +151,7 @@ class CodeParser:
         parent_block: Optional[CodeBlock] = None,
         current_span: Optional[BlockSpan] = None,
     ) -> Tuple[CodeBlock, Node, BlockSpan]:
+        node_match: NodeMatch | None = None
         if node.type == 'ERROR' or any(
             child.type == 'ERROR' for child in node.children
         ):
@@ -156,6 +159,7 @@ class CodeParser:
             self.debug_log(f'Found error node {node.type}')
         else:
             node_match = self.find_in_tree(node)
+            assert node_match is not None
 
         pre_code = content_bytes[start_byte : node.start_byte].decode(self.encoding)
         end_line = node.end_point[0]
@@ -200,8 +204,8 @@ class CodeParser:
                     'tree_sitter_type': node.type,
                 },
             )
-
-            self._previous_block.next = code_block
+            if self._previous_block:
+                self._previous_block.next = code_block
             self._previous_block = code_block
 
             self.pre_process(code_block, node_match)
@@ -213,7 +217,7 @@ class CodeParser:
                     identifier = code_block.content.split('\n')[0].strip()[0:25]
                     identifier = re.sub(r'\W+', '_', identifier)
                 else:
-                    identifier = code_block.type.value.lower()
+                    identifier = str(code_block.type.value).lower()
 
             # Set a unique identifier on each code block
             # TODO: Just count occurrences of the identifier
@@ -227,6 +231,7 @@ class CodeParser:
             else:
                 code_block.identifier = identifier
 
+            assert code_block is not None
             if (
                 code_block.type == CodeBlockType.COMMENT
                 and current_span
@@ -236,6 +241,7 @@ class CodeParser:
                 # TODO: Find a more robust way to connect comments to the right span
                 self.comments_with_no_span.append(code_block)
             else:
+                assert current_span is not None
                 new_span = self._create_new_span(
                     current_span=current_span, block=code_block
                 )
@@ -357,6 +363,7 @@ class CodeParser:
 
         self.debug_log(f'end   [{level}]: {code_block.content}')
 
+        assert current_span is not None
         for comment_block in self.comments_with_no_span:
             comment_block.belongs_to_span = current_span
             comment_block.span_ids.add(current_span.span_id)
@@ -391,14 +398,6 @@ class CodeParser:
         )
 
     def find_in_tree(self, node: Node) -> Optional[NodeMatch]:
-        if self.apply_gpt_tweaks:
-            match = self.find_match_with_gpt_tweaks(node)
-            if match:
-                self.debug_log(
-                    f'find_in_tree() GPT match: {match.block_type} on {node}'
-                )
-                return match
-
         match = self.find_match(node)
         if match:
             self.debug_log(
@@ -410,21 +409,6 @@ class CodeParser:
                 f'find_in_tree() Found no match on node type {node.type} set block type {CodeBlockType.CODE}'
             )
             return NodeMatch(block_type=CodeBlockType.CODE)
-
-    def find_match_with_gpt_tweaks(self, node: Node) -> Optional[NodeMatch]:
-        for label, node_type, query in self.gpt_queries:
-            if node_type and node.type != node_type and node_type != '_':
-                continue
-            match = self._find_match(node, query, label, capture_from_parent=True)
-            if match:
-                self.debug_log(
-                    f'find_match_with_gpt_tweaks() Found match on node {node.type} with query {label}'
-                )
-                if not match.query:
-                    match.query = label
-                return match
-
-        return None
 
     def find_match(self, node: Node) -> Optional[NodeMatch]:
         self.debug_log(f'find_match() node type {node.type}')
@@ -472,7 +456,7 @@ class CodeParser:
 
             if tag == 'check_child':
                 self.debug_log(f'[{label}] Check child {found_node}')
-                node_match = self.find_match(found_node)
+                _node_match = self.find_match(found_node)
                 if node_match:
                     node_match.check_child = found_node
                 return node_match
@@ -678,13 +662,6 @@ class CodeParser:
         else:
             raise ValueError('Content must be either a string or bytes')
 
-        # TODO: make thread safe?
-        self.spans_by_id = {}
-        self._span_counter = {}
-
-        # TODO: Should me moved to a central CodeGraph
-        self._graph = nx.DiGraph()
-
         tree = self.tree_parser.parse(content_in_bytes)
         module, _, _ = self.parse_code(
             content_in_bytes, tree.walk().node, file_path=file_path
@@ -758,11 +735,14 @@ class CodeParser:
                     start_line=block.start_line,
                     end_line=block.start_line,
                     initiating_block=block.parent,
-                    parent_block_path=block.parent.full_path(),
+                    parent_block_path=block.parent.full_path()
+                    if block.parent
+                    else None,
                 )
 
         # create a new span on new structures in classes or modules but not functions
         # * if the parent block doesn't have a span
+        assert block.parent is not None
         if (
             block.type.group in [CodeBlockTypeGroup.STRUCTURE]
             and block.parent.type in [CodeBlockType.MODULE, CodeBlockType.CLASS]
@@ -833,9 +813,11 @@ class CodeParser:
         if block.type.group == CodeBlockTypeGroup.STRUCTURE:
             structure_block = block
         else:
-            structure_block = block.find_type_group_in_parents(
+            _structure_block = block.find_type_group_in_parents(
                 CodeBlockTypeGroup.STRUCTURE
             )
+            assert _structure_block is not None
+            structure_block = _structure_block
 
         span_id = structure_block.path_string()
         if label and span_id:

@@ -248,9 +248,9 @@ class SimpleFaissVectorStore(BasePydanticVectorStore):
         faiss.write_index(self._faiss_index, f'{persist_dir}/vector_index.faiss')
 
         for vector_id in self._vector_ids_to_delete:
-            text_id = self._data.vector_id_to_text_id.pop(vector_id, None)
-            if text_id:
-                self._data.text_id_to_ref_doc_id.pop(text_id, None)
+            _current_text_id = self._data.vector_id_to_text_id.pop(vector_id, None)
+            if _current_text_id:
+                self._data.text_id_to_ref_doc_id.pop(_current_text_id, None)
 
         self._vector_ids_to_delete = []
 

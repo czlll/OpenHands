@@ -27,12 +27,7 @@ class PythonParser(CodeParser):
         language = get_language('python')
 
         super().__init__(language, **kwargs)
-
-        self.queries = []
         self.queries.extend(self._build_queries('python.scm'))
-
-        if self.apply_gpt_tweaks:
-            self.gpt_queries.extend(self._build_queries('python_gpt.scm'))
 
     @property
     def language(self):
@@ -69,7 +64,7 @@ class PythonParser(CodeParser):
             for reference in codeblock.relationships:
                 reference.type = RelationshipType.TYPE
 
-        new_references = []
+        new_references: list = []
         for reference in codeblock.relationships:
             # Set parent class path as reference path on self
             if reference.path and reference.path[0] == 'self':

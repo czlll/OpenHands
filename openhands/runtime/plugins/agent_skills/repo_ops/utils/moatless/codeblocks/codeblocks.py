@@ -5,8 +5,12 @@ from typing import List, Optional, Set
 from pydantic import BaseModel, Field, root_validator, validator
 from typing_extensions import deprecated
 
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.parser.comment import get_comment_symbol
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.utils.colors import Colors
+from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.parser.comment import (
+    get_comment_symbol,
+)
+from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.utils.colors import (
+    Colors,
+)
 
 BlockPath = List[str]
 
@@ -920,7 +924,7 @@ class CodeBlock(BaseModel):
             blocks.extend(child.get_indexable_blocks())
         return blocks
 
-    def find_reference(self, ref_path: Optional[List[str]]) -> Optional[Relationship]:
+    def find_reference(self, ref_path: List[str]) -> Optional[Relationship]:
         for child in self.children:
             if child.type == CodeBlockType.IMPORT:
                 for reference in child.relationships:
@@ -941,9 +945,9 @@ class CodeBlock(BaseModel):
                 return Relationship(scope=ReferenceScope.LOCAL, path=child_path)
 
         if self.parent:
-            reference = self.parent.find_reference(ref_path)
-            if reference:
-                return reference
+            reference_result = self.parent.find_reference(ref_path)
+            if reference_result:
+                return reference_result
 
         return None
 
@@ -1276,7 +1280,7 @@ class CodeBlock(BaseModel):
             if (
                 not self.previous
                 or self.previous.end_line < line_number
-                or self.next.tokens > tokens
+                or (self.next and self.next.tokens > tokens)
             ):
                 return self
             else:
@@ -1300,7 +1304,11 @@ class CodeBlock(BaseModel):
 
     def has_any_span(self, span_ids: Optional[Set[str]]):
         all_span_ids = self.get_all_span_ids(include_self=False)
-        return any([span_id in all_span_ids for span_id in span_ids])
+        return (
+            any([span_id in all_span_ids for span_id in span_ids])
+            if span_ids
+            else False
+        )
 
     def belongs_to_any_span(self, span_ids: Set[str]):
         return self.belongs_to_span and self.belongs_to_span.span_id in span_ids

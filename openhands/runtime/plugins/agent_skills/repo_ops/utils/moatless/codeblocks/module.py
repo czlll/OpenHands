@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, List, Optional, Set
+from typing import Dict, Optional, Set
 
 from networkx import DiGraph
 from pydantic import (
@@ -7,7 +7,12 @@ from pydantic import (
 )
 
 # from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks import CodeBlock, CodeBlockType
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.codeblocks import (BlockSpan, SpanType, CodeBlock, CodeBlockType)
+from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.codeblocks import (
+    BlockSpan,
+    CodeBlock,
+    CodeBlockType,
+    SpanType,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -15,11 +20,11 @@ logger = logging.getLogger(__name__)
 class Module(CodeBlock):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    file_path: Optional[str] = None
-    content: str = None
+    file_path: str
+    content: str
     spans_by_id: Dict[str, BlockSpan] = {}
-    language: Optional[str] = None
-    parent: Optional[CodeBlock] = None
+    language: str | None = None
+    parent: CodeBlock | None = None
 
     _graph: DiGraph = None  # TODO: Move to central CodeGraph
 
@@ -42,67 +47,7 @@ class Module(CodeBlock):
         tokens += sum([child.sum_tokens() for child in self.children])
         return tokens
 
-    def show_spans(
-        self,
-        span_ids: Optional[List[str]] = None,
-        show_related: bool = False,
-        max_tokens: int = 2000,
-    ) -> bool:
-        for span in self.spans_by_id.values():
-            span.visible = False
-
-        checked_span_ids = set()
-        span_ids_to_check = []
-
-        tokens = 0
-        for span_id in span_ids:
-            span = self.spans_by_id.get(span_id)
-            if not span:
-                return False
-
-            tokens += span.tokens
-            checked_span_ids.add(span_id)
-            span_ids_to_check.append(span_id)
-            span.visible = True
-
-        if not show_related:
-            return True
-
-        # Add imports from module
-        for span in self.spans.values():
-            if (
-                span.span_type == SpanType.INITATION
-                and span.span_id not in checked_span_ids
-            ):
-                span_ids_to_check.append(span.span_id)
-
-        while span_ids_to_check:
-            span_id = span_ids_to_check.pop(0)
-            related_spans = self.find_related_spans(span_id)
-
-            print(f'Related spans: {len(related_spans)} for {span_id}')
-
-            # TODO: Go through priotiized related spans to make sure that the most relevant are added first
-            # TODO: Verify span token size
-            for span in related_spans:
-                if span.tokens + tokens > max_tokens:
-                    print(
-                        f'Max tokens reached: {span.tokens} + {tokens} > {max_tokens}'
-                    )
-                    return True
-
-                span.visible = True
-                tokens += span.tokens
-
-                if span.span_id not in checked_span_ids:
-                    checked_span_ids.add(span.span_id)
-                    span_ids_to_check.append(span.span_id)
-
-        print(f'Max tokens reached {tokens} < {max_tokens}')
-
-        return True
-
-    def find_related_span_ids(self, span_id: Optional[str] = None) -> Set[str]:
+    def find_related_span_ids(self, span_id: str) -> Set[str]:
         related_span_ids = set()
 
         blocks = self.find_blocks_by_span_id(span_id)
@@ -124,10 +69,17 @@ class Module(CodeBlock):
                     related_span_ids.add(span.span_id)
 
             # Always add parent class initation span
-            if block.parent and block.parent.type == CodeBlockType.CLASS:
+            if (
+                block.parent
+                and block.parent.type == CodeBlockType.CLASS
+                and block.belongs_to_span is not None
+            ):
                 related_span_ids.add(block.belongs_to_span.span_id)
                 for class_child in block.parent.children:
-                    if class_child.belongs_to_span.span_type == SpanType.INITATION:
+                    if (
+                        class_child.belongs_to_span
+                        and class_child.belongs_to_span.span_type == SpanType.INITATION
+                    ):
                         related_span_ids.add(class_child.belongs_to_span.span_id)
 
         # Always add module initation span

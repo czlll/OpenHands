@@ -21,26 +21,45 @@ from llama_index.core.vector_stores.types import (
     VectorStoreQuery,
 )
 from llama_index.embeddings.azure_openai import AzureOpenAIEmbedding
-import json
-secret = json.load(open('openhands/runtime/plugins/agent_skills/repo_ops/data/secret.json', "r"))
-os.environ["AZURE_OPENAI_ENDPOINT"] = secret['AZURE_OPENAI_ENDPOINT']
-os.environ["AZURE_OPENAI_API_KEY"] = secret['AZURE_OPENAI_API_KEY']
+
+secret = json.load(
+    open('openhands/runtime/plugins/agent_skills/repo_ops/data/secret.json', 'r')
+)
+os.environ['AZURE_OPENAI_ENDPOINT'] = secret['AZURE_OPENAI_ENDPOINT']
+os.environ['AZURE_OPENAI_API_KEY'] = secret['AZURE_OPENAI_API_KEY']
 
 from rapidfuzz import fuzz
 
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.codeblocks import CodeBlock, CodeBlockType
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.index.embed_model import get_embed_model
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.index.epic_split import EpicSplitter
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.index.settings import IndexSettings
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.index.simple_faiss import SimpleFaissVectorStore
+from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.codeblocks import (
+    CodeBlock,
+    CodeBlockType,
+)
+from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.index.embed_model import (
+    get_embed_model,
+)
+from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.index.epic_split import (
+    EpicSplitter,
+)
+from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.index.settings import (
+    IndexSettings,
+)
+from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.index.simple_faiss import (
+    SimpleFaissVectorStore,
+)
 from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.index.types import (
     CodeSnippet,
     SearchCodeHit,
     SearchCodeResponse,
 )
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.repository import FileRepository
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.types import FileWithSpans
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.utils.tokenizer import count_tokens
+from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.repository import (
+    FileRepository,
+)
+from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.types import (
+    FileWithSpans,
+)
+from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.utils.tokenizer import (
+    count_tokens,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -717,6 +736,9 @@ class CodeIndex:
         blocks_by_function_name: dict[str, list] = {}
 
         def index_callback(codeblock: CodeBlock):
+            if codeblock.identifier is None:
+                return
+
             if codeblock.type == CodeBlockType.CLASS:
                 if codeblock.identifier not in blocks_by_class_name:
                     blocks_by_class_name[codeblock.identifier] = []

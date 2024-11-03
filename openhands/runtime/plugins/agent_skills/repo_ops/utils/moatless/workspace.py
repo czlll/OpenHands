@@ -1,16 +1,18 @@
 import logging
 from typing import Optional
 
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.parser.python import PythonParser
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.file_context import FileContext
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.index.code_index import CodeIndex
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.repository import CodeFile, FileRepository
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.types import FileWithSpans
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.verify.lint import run_pylint
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.verify.maven import run_maven_and_parse_errors
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.verify.types import VerificationError
-
-_parser = PythonParser()
+from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.file_context import (
+    FileContext,
+)
+from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.index.code_index import (
+    CodeIndex,
+)
+from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.repository import (
+    FileRepository,
+)
+from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.types import (
+    FileWithSpans,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -68,18 +70,3 @@ class Workspace:
         return self.file_repo.get_file(
             file_path, refresh=refresh, from_origin=from_origin
         )
-
-    def save_file(self, file_path: str, updated_content: Optional[str] = None):
-        self.file_repo.save_file(file_path, updated_content)
-
-    def save(self):
-        self.file_repo.save()
-
-    def verify(self, file: CodeFile) -> list[VerificationError]:
-        if file.file_path.endswith('.java'):
-            return run_maven_and_parse_errors(self.file_repo.path)
-        elif file.file_path.endswith('.py'):
-            return run_pylint(self.file_repo.path, file.file_path)
-        else:
-            logger.warning(f'Verification not supported for {file.file_path}')
-            return []
