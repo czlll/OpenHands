@@ -28,15 +28,20 @@ from typing import Dict, Optional
 # from xmlrpc.client import boolean
 import networkx as nx
 import Stemmer
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.compress_file import get_skeleton
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.graph_encoder import RepoSearcher
+from llama_index.retrievers.bm25 import BM25Retriever
+
 from openhands.repo_index import Workspace
+from openhands.runtime.plugins.agent_skills.repo_ops.utils.compress_file import (
+    get_skeleton,
+)
+from openhands.runtime.plugins.agent_skills.repo_ops.utils.graph_encoder import (
+    RepoSearcher,
+)
 from openhands.runtime.plugins.agent_skills.repo_ops.utils.preprocess_data import (
     get_full_file_paths_and_classes_and_functions,
     line_wrap_content,
     show_project_structure,
 )
-from llama_index.retrievers.bm25 import BM25Retriever
 from openhands.runtime.plugins.agent_skills.repo_ops.utils.util import (
     DEPENDENCY_GRAPH_LOC,
     INDEX_STORE_LOC,
@@ -58,6 +63,7 @@ ALL_FUNC: list | None = None
 REPO_SAVE_DIR: str | None = None
 
 FOUND_MODULES: list[str] = []
+
 
 def add_found_modules(file_path: str, module_name: str, ntype: str = 'file'):
     global FOUND_MODULES
