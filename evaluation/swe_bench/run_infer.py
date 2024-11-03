@@ -43,7 +43,6 @@ USE_INSTANCE_IMAGE = os.environ.get('USE_INSTANCE_IMAGE', 'false').lower() == 't
 
 AGENT_CLS_TO_FAKE_USER_RESPONSE_FN = {
     'CodeActAgent': codeact_user_response,
-    'SearchAgent': codeact_user_response,
     'CodeActSWEAgent': codeact_user_response,
 }
 
