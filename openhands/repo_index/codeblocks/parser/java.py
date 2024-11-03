@@ -1,7 +1,7 @@
 import tree_sitter_java as java
 from tree_sitter import Language
 
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.parser.parser import CodeParser
+from openhands.repo_index.codeblocks.parser.parser import CodeParser
 
 
 class JavaParser(CodeParser):

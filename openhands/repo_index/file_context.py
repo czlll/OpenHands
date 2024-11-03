@@ -4,7 +4,7 @@ from typing import Dict, List, Optional, Set
 
 from pydantic import BaseModel
 
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.codeblocks import (
+from openhands.repo_index.codeblocks.codeblocks import (
     BlockSpan,
     CodeBlock,
     CodeBlockType,
@@ -12,11 +12,11 @@ from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.c
     SpanMarker,
     SpanType,
 )
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.repository import (
+from openhands.repo_index.repository import (
     CodeFile,
     FileRepository,
 )
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.types import (
+from openhands.repo_index.types import (
     FileWithSpans,
 )
 

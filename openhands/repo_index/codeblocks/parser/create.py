@@ -1,7 +1,7 @@
 from typing import Optional
 
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.parser.parser import CodeParser
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.parser.python import PythonParser
+from openhands.repo_index.codeblocks.parser.parser import CodeParser
+from openhands.repo_index.codeblocks.parser.python import PythonParser
 
 
 def is_supported(language: str) -> bool:

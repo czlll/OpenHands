@@ -8,7 +8,7 @@ import networkx as nx
 from llama_index.core import get_tokenizer
 from tree_sitter import Language, Node, Parser, Query
 
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.codeblocks import (
+from openhands.repo_index.codeblocks.codeblocks import (
     BlockSpan,
     CodeBlock,
     CodeBlockType,
@@ -19,10 +19,10 @@ from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.c
     RelationshipType,
     SpanType,
 )
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.module import (
+from openhands.repo_index.codeblocks.module import (
     Module,
 )
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.parser.comment import (
+from openhands.repo_index.codeblocks.parser.comment import (
     get_comment_symbol,
 )
 
@@ -121,7 +121,7 @@ class CodeParser:
 
     def _build_queries(self, query_file: str) -> list[tuple[str, str, Query]]:
         with resources.open_text(
-            'openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.parser.queries',
+            'openhands.repo_index.codeblocks.parser.queries',
             query_file,
         ) as file:
             query_list = file.read().strip().split('\n\n')

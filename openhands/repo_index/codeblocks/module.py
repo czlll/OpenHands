@@ -6,8 +6,8 @@ from pydantic import (
     ConfigDict,
 )
 
-# from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks import CodeBlock, CodeBlockType
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.codeblocks import (
+# from openhands.repo_index.codeblocks import CodeBlock, CodeBlockType
+from openhands.repo_index.codeblocks.codeblocks import (
     BlockSpan,
     CodeBlock,
     CodeBlockType,

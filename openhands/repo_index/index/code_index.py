@@ -30,34 +30,34 @@ os.environ['AZURE_OPENAI_API_KEY'] = secret['AZURE_OPENAI_API_KEY']
 
 from rapidfuzz import fuzz
 
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.codeblocks import (
+from openhands.repo_index.codeblocks.codeblocks import (
     CodeBlock,
     CodeBlockType,
 )
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.index.embed_model import (
+from openhands.repo_index.index.embed_model import (
     get_embed_model,
 )
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.index.epic_split import (
+from openhands.repo_index.index.epic_split import (
     EpicSplitter,
 )
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.index.settings import (
+from openhands.repo_index.index.settings import (
     IndexSettings,
 )
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.index.simple_faiss import (
+from openhands.repo_index.index.simple_faiss import (
     SimpleFaissVectorStore,
 )
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.index.types import (
+from openhands.repo_index.index.types import (
     CodeSnippet,
     SearchCodeHit,
     SearchCodeResponse,
 )
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.repository import (
+from openhands.repo_index.repository import (
     FileRepository,
 )
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.types import (
+from openhands.repo_index.types import (
     FileWithSpans,
 )
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.utils.tokenizer import (
+from openhands.repo_index.utils.tokenizer import (
     count_tokens,
 )
 

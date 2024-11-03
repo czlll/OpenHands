@@ -7,13 +7,13 @@ from typing import Optional
 
 from pydantic import BaseModel
 
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks import (
+from openhands.repo_index.codeblocks import (
     get_parser_by_path,
 )
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.module import (
+from openhands.repo_index.codeblocks.module import (
     Module,
 )
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.parser.python import (
+from openhands.repo_index.codeblocks.parser.python import (
     PythonParser,
 )
 

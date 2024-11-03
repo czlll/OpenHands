@@ -1,16 +1,16 @@
 import logging
 from typing import Optional
 
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.file_context import (
+from openhands.repo_index.file_context import (
     FileContext,
 )
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.index.code_index import (
+from openhands.repo_index.index.code_index import (
     CodeIndex,
 )
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.repository import (
+from openhands.repo_index.repository import (
     FileRepository,
 )
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.types import (
+from openhands.repo_index.types import (
     FileWithSpans,
 )
 

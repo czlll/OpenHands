@@ -9,18 +9,18 @@ from llama_index.core.node_parser.node_utils import logger
 from llama_index.core.schema import BaseNode, TextNode
 from llama_index.core.utils import get_tokenizer, get_tqdm_iterable
 
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.codeblocks import (
+from openhands.repo_index.codeblocks.codeblocks import (
     CodeBlock,
     CodeBlockType,
     PathTree,
 )
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.parser.python import (
+from openhands.repo_index.codeblocks.parser.python import (
     PythonParser,
 )
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.index.code_node import (
+from openhands.repo_index.index.code_node import (
     CodeNode,
 )
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.index.settings import (
+from openhands.repo_index.index.settings import (
     CommentStrategy,
 )
 

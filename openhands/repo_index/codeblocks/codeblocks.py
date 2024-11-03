@@ -5,10 +5,10 @@ from typing import List, Optional, Set
 from pydantic import BaseModel, Field, root_validator, validator
 from typing_extensions import deprecated
 
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.parser.comment import (
+from openhands.repo_index.codeblocks.parser.comment import (
     get_comment_symbol,
 )
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.utils.colors import (
+from openhands.repo_index.utils.colors import (
     Colors,
 )
 

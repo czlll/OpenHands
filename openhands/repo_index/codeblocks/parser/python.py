@@ -2,14 +2,14 @@ import logging
 
 from tree_sitter_languages import get_language
 
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.codeblocks import (
+from openhands.repo_index.codeblocks.codeblocks import (
     CodeBlock,
     CodeBlockType,
     ReferenceScope,
     RelationshipType,
     ValidationError,
 )
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless.codeblocks.parser.parser import (
+from openhands.repo_index.codeblocks.parser.parser import (
     CodeParser,
     NodeMatch,
     commented_out_keywords,

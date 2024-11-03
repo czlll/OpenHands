@@ -30,7 +30,7 @@ import networkx as nx
 import Stemmer
 from openhands.runtime.plugins.agent_skills.repo_ops.utils.compress_file import get_skeleton
 from openhands.runtime.plugins.agent_skills.repo_ops.utils.graph_encoder import RepoSearcher
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.moatless import Workspace
+from openhands.repo_index import Workspace
 from openhands.runtime.plugins.agent_skills.repo_ops.utils.preprocess_data import (
     get_full_file_paths_and_classes_and_functions,
     line_wrap_content,
