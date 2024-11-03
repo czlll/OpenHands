@@ -59,7 +59,6 @@ REPO_SAVE_DIR: str | None = None
 
 FOUND_MODULES: list[str] = []
 
-
 def add_found_modules(file_path: str, module_name: str, ntype: str = 'file'):
     global FOUND_MODULES
     if ntype == 'file':
@@ -148,6 +147,9 @@ def get_current_issue_data():
 def get_repo_save_dir():
     global REPO_SAVE_DIR
     return REPO_SAVE_DIR
+
+
+set_current_issue('astropy__astropy-12907')
 
 
 file_content_in_block_template = """
