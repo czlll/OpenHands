@@ -252,10 +252,9 @@ SearchCallRelTool = ChatCompletionToolParam(
 )
 
 
-_SEARCHREPO_DESCRIPTION = """This function searches for specified search terms within a repository, looking through Python files matching a given pattern.
-* Checks firstly if the term matches any class or function names.
-* if the term matches a class/function, return the class/function definitions from the codebase based on the provided class names, filtered by the file pattern if applicable.
-* if not, retrieves code snippets by first performing a BM25 search to rank documents based on the similarity to the term and then follows up with a semantic search to find more contextually similar code snippets.
+_SEARCHREPO_DESCRIPTION = """This function searches for specified terms within a repository.
+* if the term matches a class/function, return the class/function definitions based on the provided class names, filtered by the file pattern if applicable.
+* if not, retrieves code snippets by performing a BM25 search and then follows up with a semantic search to find more contextually similar code snippets.
 
 ** Examples:
 # search class `class_A`, function `function_1` and  `class_B.function_2`
@@ -268,7 +267,7 @@ search_in_repo(['class_A'], file_pattern='path/to/file_1.py')
 search_in_repo(['class_A'], file_pattern='**/sub_dir/*.py')
 
 # search code snippets related to 'order' and 'payment'
-search_in_repo(['order', 'payment'], file_pattern='**/sub_dir/*.py')
+search_in_repo(['order', 'payment'])
 """
 
 SearchRepoTool = ChatCompletionToolParam(
@@ -282,7 +281,7 @@ SearchRepoTool = ChatCompletionToolParam(
                 'search_terms': {
                     'type': 'array',
                     'items': {'type': 'string'},
-                    'description': 'A list of strings representing the terms to search for within the repository. Each can be a functional description, a potential class or method name, or any relevant keywords related to the code you want to find in the repository.',
+                    'description': 'A list of strings representing the terms to search for within the repository. Each can be a functional description, a potential class or function name, or any relevant keywords related to the code you want to find in the repository.',
                 },
                 'file_pattern': {
                     'type': 'string',
@@ -479,7 +478,7 @@ def get_tools(
     codeact_enable_llm_editor: bool = False,
     codeact_enable_jupyter: bool = False,
 ) -> list[ChatCompletionToolParam]:
-    tools = [CmdRunTool, FinishTool]
+    tools = [FinishTool] # CmdRunTool, 
     if codeact_enable_browsing_delegate:
         tools.append(BrowserDelegationTool)
     if codeact_enable_jupyter:

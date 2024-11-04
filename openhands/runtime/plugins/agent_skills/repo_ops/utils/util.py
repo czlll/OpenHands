@@ -2,6 +2,7 @@ import fnmatch
 import json
 import logging
 import os
+import zipfile
 from collections import defaultdict
 from copy import deepcopy
 from typing import DefaultDict, List, Optional
@@ -19,12 +20,9 @@ from openhands.runtime.plugins.agent_skills.repo_ops.utils.preprocess_data impor
 from openhands.runtime.plugins.agent_skills.repo_ops.utils.repo import setup_github_repo
 
 # SET THIS IF YOU WANT TO USE THE PREPROCESSED FILES
-PROJECT_FILE_LOC = os.environ.get('PROJECT_FILE_LOC', 'openhands/runtime/plugins/agent_skills/repo_ops/data/repo_structure/SWE-bench_Lite')
-DEPENDENCY_GRAPH_LOC = os.environ.get('DEPENDENCY_GRAPH_LOC', 'openhands/runtime/plugins/agent_skills/repo_ops/data/dependency_graph')
-INDEX_STORE_LOC = os.environ.get('INDEX_STORE_LOC', 'openhands/runtime/plugins/agent_skills/repo_ops/data/index_data/20241012-text-embedding-3-small')
-assert PROJECT_FILE_LOC != ''
-assert DEPENDENCY_GRAPH_LOC != ''
-assert INDEX_STORE_LOC != ''
+PROJECT_FILE_LOC = '/workspace/repo_data/repo_structure/'
+DEPENDENCY_GRAPH_LOC = '/workspace/repo_data/dependency_graph'
+INDEX_STORE_LOC = '/workspace/repo_data/index_data/'
 
 
 def find_matching_files_from_list(file_list, file_pattern):
@@ -285,3 +283,18 @@ def setup_full_swebench_repo(
 
 def get_repo_dir_name(repo: str):
     return repo.replace('/', '_')
+
+
+def zip_directory(directory_path):
+    # Get the directory name for the zip file
+    zip_file_path = f"{directory_path}.zip"
+    
+    # Create a ZipFile object and add the directory to it
+    with zipfile.ZipFile(zip_file_path, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        for root, dirs, files in os.walk(directory_path):
+            for file in files:
+                file_path = os.path.join(root, file)
+                # Add file to the zip file with the relative path
+                zip_file.write(file_path, os.path.relpath(file_path, directory_path))
+    
+    return zip_file_path

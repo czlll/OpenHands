@@ -18,16 +18,12 @@ Functions:
 
 import logging
 import os
-import pickle
 import re
-import subprocess
-import uuid
+
 from copy import deepcopy
 from typing import Dict, Optional
 
-# from xmlrpc.client import boolean
 import networkx as nx
-import Stemmer
 from llama_index.retrievers.bm25 import BM25Retriever
 
 from openhands.repo_index import Workspace
@@ -43,28 +39,40 @@ from openhands.runtime.plugins.agent_skills.repo_ops.utils.preprocess_data impor
     show_project_structure,
 )
 from openhands.runtime.plugins.agent_skills.repo_ops.utils.util import (
-    DEPENDENCY_GRAPH_LOC,
-    INDEX_STORE_LOC,
+    # DEPENDENCY_GRAPH_LOC,
+    # INDEX_STORE_LOC,
     find_matching_files_from_list,
-    get_meta_data,
-    get_repo_dir_name,
-    get_repo_structures,
-    setup_full_swebench_repo,
+    # get_meta_data,
+    # get_repo_dir_name,
+    # get_repo_structures,
+    # setup_full_swebench_repo,
+)
+from openhands.runtime.plugins.agent_skills.repo_ops.utils.get_repo_structure.get_repo_structure import (
+    create_structure
+)
+from openhands.runtime.plugins.agent_skills.repo_ops.utils.graph_encoder.dependency_graph.build_graph_v2 import (
+    build_graph_v2
 )
 
 logger = logging.getLogger(__name__)
 
-CURRENT_ISSUE_ID: str | None = None
-CURRENT_INSTANCE: dict | None = None
+# CURRENT_ISSUE_ID: str | None = None
+# CURRENT_INSTANCE: dict | None = None
 CURRENT_STRUCTURE: dict | None = None
 ALL_FILE: list | None = None
 ALL_CLASS: list | None = None
 ALL_FUNC: list | None = None
-REPO_SAVE_DIR: str | None = None
+G: dict | None = None
+
+# INDEX_DATA_DIR = os.environ.get('INDEX_DATA_DIR')
+# logger.info('INDEX_DATA_DIR: ', INDEX_DATA_DIR)
+# TODO: backup initial repo(if add editing)
+
+# set index_data path
+# INDEX_STORE_LOC = os.path.join(REPO_DATA_DIR, 'index_data')
+
 
 FOUND_MODULES: list[str] = []
-
-
 def add_found_modules(file_path: str, module_name: str, ntype: str = 'file'):
     global FOUND_MODULES
     if ntype == 'file':
@@ -80,82 +88,61 @@ def get_found_modules():
     return FOUND_MODULES
 
 
-def set_current_issue(
-    instance_id: Optional[str] = None,
-    instance_data: Optional[dict] = None,
-    dataset: str = 'princeton-nlp/SWE-bench_Lite',
-    split: str = 'test',
-    rank=0,
-):
-    global CURRENT_ISSUE_ID, CURRENT_INSTANCE, CURRENT_STRUCTURE
-    global ALL_FILE, ALL_CLASS, ALL_FUNC
-    assert instance_id or instance_data
+# def set_current_repo_data(
+#     # instance_id: Optional[str] = None,
+#     # instance_data: Optional[dict] = None,
+#     # dataset: str = 'princeton-nlp/SWE-bench_Lite',
+#     # split: str = 'test',
+#     rank=0,
+# ):
+#     global CURRENT_STRUCTURE, G
+#     global ALL_FILE, ALL_CLASS, ALL_FUNC
 
-    if instance_id:
-        CURRENT_ISSUE_ID = instance_id
-        CURRENT_INSTANCE = get_meta_data(CURRENT_ISSUE_ID, dataset, split)
-    elif instance_data:
-        CURRENT_ISSUE_ID = instance_data['instance_id']
-        CURRENT_INSTANCE = instance_data
-
-    CURRENT_STRUCTURE = get_repo_structures(CURRENT_INSTANCE)
-    ALL_FILE, ALL_CLASS, ALL_FUNC = get_full_file_paths_and_classes_and_functions(
-        CURRENT_STRUCTURE
-    )
-
-    global REPO_SAVE_DIR
-    # Generate a temperary folder and add uuid to avoid collision
-    REPO_SAVE_DIR = os.path.join('playground', str(uuid.uuid4()))
-    # assert playground doesn't exist
-    assert not os.path.exists(REPO_SAVE_DIR), f'{REPO_SAVE_DIR} already exists'
-    # create playground
-    os.makedirs(REPO_SAVE_DIR)
-
-    logging.info(f'Rank = {rank}, set CURRENT_ISSUE_ID = {CURRENT_ISSUE_ID}')
+#     if CURRENT_STRUCTURE and G:
+#         return
 
 
-def reset_current_issue():
-    global CURRENT_ISSUE_ID, CURRENT_INSTANCE, CURRENT_STRUCTURE, FOUND_MODULES
-    CURRENT_ISSUE_ID = None
-    CURRENT_INSTANCE = None
-    CURRENT_STRUCTURE = None
-    FOUND_MODULES = []
-
-    global ALL_FILE, ALL_CLASS, ALL_FUNC
-    ALL_FILE, ALL_CLASS, ALL_FUNC = None, None, None
-
-    global REPO_SAVE_DIR
-    if REPO_SAVE_DIR:
-        subprocess.run(['rm', '-rf', REPO_SAVE_DIR], check=True)
-        REPO_SAVE_DIR = None
-
-
-def get_current_issue_id():
-    global CURRENT_ISSUE_ID
-    return CURRENT_ISSUE_ID
+def get_current_call_graph():
+    global G
+    if not G:
+        # generate dependency_graph and set path
+        REPO_DIR = os.environ.get('REPO_DIR')
+        logger.info('REPO_DIR: ' + REPO_DIR)
+        G = build_graph_v2(REPO_DIR, global_import=True)
+    return G
 
 
 def get_current_issue_structure():
     global CURRENT_STRUCTURE
+    if not CURRENT_STRUCTURE:
+        # generate repo_struction
+        REPO_DIR = os.environ.get('REPO_DIR')
+        logger.info('REPO_DIR: ' + REPO_DIR)
+        CURRENT_STRUCTURE = create_structure(REPO_DIR)
+    
+    logger.info('CURRENT_STRUCTURE:' + str(CURRENT_STRUCTURE==None))
     return CURRENT_STRUCTURE
 
 
 def get_current_repo_modules():
     global ALL_FILE, ALL_CLASS, ALL_FUNC
+    if not all([ALL_FILE, ALL_CLASS, ALL_FUNC]):
+        structure = get_current_issue_structure()
+        ALL_FILE, ALL_CLASS, ALL_FUNC = get_full_file_paths_and_classes_and_functions(
+            structure
+        )
+        
     return ALL_FILE, ALL_CLASS, ALL_FUNC
 
 
-def get_current_issue_data():
-    global CURRENT_ISSUE_ID, CURRENT_INSTANCE, CURRENT_STRUCTURE
-    return CURRENT_ISSUE_ID, CURRENT_INSTANCE, CURRENT_STRUCTURE
+# def get_current_issue_data():
+#     global CURRENT_ISSUE_ID, CURRENT_INSTANCE, CURRENT_STRUCTURE
+#     return CURRENT_ISSUE_ID, CURRENT_INSTANCE, CURRENT_STRUCTURE
 
 
-def get_repo_save_dir():
-    global REPO_SAVE_DIR
-    return REPO_SAVE_DIR
-
-
-set_current_issue('astropy__astropy-12907')
+# def get_repo_save_dir():
+#     global REPO_SAVE_DIR
+#     return REPO_SAVE_DIR
 
 
 file_content_in_block_template = """
@@ -175,7 +162,7 @@ def get_repo_structure() -> str:
     Returns:
         str: The tree structure of the repository where the issue resides.
     """
-
+    
     structure = get_current_issue_structure()
 
     # only structure
@@ -768,6 +755,7 @@ def search_term_in_repo(query: str, file_pattern: Optional[str] = '**/*.py') -> 
     Returns:
         str: A formatted string containing the combined results from both BM25 and semantic search, including file paths and the retrieved code snippets (the partial code of a module or the skeleton of the specific module).
     """
+    
     bm25_result = '### Retrieving by bm25 algorithm:\n'
     bm25_result += bm25_retrieve(
         query=query, file_pattern=file_pattern, similarity_top_k=10
@@ -798,29 +786,36 @@ def bm25_retrieve(
         str: A formatted string containing the search results, including file paths and the retrieved code snippets (the partial code of a module or the skeleton of the specific module).
     """
 
-    issue_id, instance, structure = get_current_issue_data()
-    files, _, _ = get_current_repo_modules()
+    # issue_id, instance, structure = get_current_issue_data()
+    
 
-    repo_playground = get_repo_save_dir()
-    repo_dir = setup_full_swebench_repo(
-        instance_data=instance, repo_base_dir=repo_playground
-    )
-    persist_dir = os.path.join(
-        INDEX_STORE_LOC, get_repo_dir_name(instance['instance_id'])
-    )
-    workspace = Workspace.from_dirs(repo_dir=repo_dir, index_dir=persist_dir)
+    # repo_playground = get_repo_save_dir()
+    # repo_dir = setup_full_swebench_repo(
+    #     instance_data=instance, repo_base_dir=repo_playground
+    # )
+    # persist_dir = os.path.join(
+    #     INDEX_STORE_LOC, get_repo_dir_name(instance['instance_id'])
+    # )
+    # workspace = Workspace.from_dirs(repo_dir=repo_dir, index_dir=persist_dir)
+    
+    # global INDEX_DATA_DIR, REPO_DIR
+    REPO_DIR = os.environ.get('REPO_DIR')
+    INDEX_DATA_DIR = os.environ.get('INDEX_DATA_DIR')
+    logger.info('INDEX_DATA_DIR: ' + INDEX_DATA_DIR)
+    
+    workspace = Workspace.from_dirs(repo_dir=REPO_DIR, index_dir=INDEX_DATA_DIR)
     code_index = workspace.code_index
     # bm25_retriever = BM25Retriever.from_persist_dir("plugins/retrieval_tools/bm25_retriever/persist_data/")
     bm25_retriever = BM25Retriever.from_defaults(
         docstore=code_index._docstore,
         similarity_top_k=10,
-        stemmer=Stemmer.Stemmer('english'),
+        # stemmer=Stemmer.Stemmer('english'),
         language='english',
     )
 
     # message = f"Search results for query `{query}`:\n"
     message = ''
-
+    files, _, _ = get_current_repo_modules()
     all_file_paths = [file[0] for file in files]
     exclude_files = find_matching_files_from_list(all_file_paths, '**/test*/**')
     if file_pattern:
@@ -918,15 +913,17 @@ def semantic_search(
         str: A formatted string containing the search results, including messages and code snippets of the semantically similar code sections found.
     """
 
-    issue_id, instance, structure = get_current_issue_data()
-    repo_playground = get_repo_save_dir()
-    repo_dir = setup_full_swebench_repo(
-        instance_data=instance, repo_base_dir=repo_playground
-    )
-    persist_dir = os.path.join(
-        INDEX_STORE_LOC, get_repo_dir_name(instance['instance_id'])
-    )
-    workspace = Workspace.from_dirs(repo_dir=repo_dir, index_dir=persist_dir)
+    # issue_id, instance, structure = get_current_issue_data()
+    # repo_playground = get_repo_save_dir()
+    # repo_dir = setup_full_swebench_repo(
+    #     instance_data=instance, repo_base_dir=repo_playground
+    # )
+    # persist_dir = os.path.join(
+    #     INDEX_STORE_LOC, get_repo_dir_name(instance['instance_id'])
+    # )
+    REPO_DIR = os.environ.get('REPO_DIR')
+    INDEX_DATA_DIR = os.environ.get('INDEX_DATA_DIR')
+    workspace = Workspace.from_dirs(repo_dir=REPO_DIR, index_dir=INDEX_DATA_DIR)
     # file_context = workspace.create_file_context()
     file_context = workspace.file_context
 
@@ -995,7 +992,8 @@ def semantic_search(
 
 
 def search_dependency_graph_one_hop(
-    issue_id: str, module_name: str, file_path: str, ntype: str
+    # issue_id: str, 
+    module_name: str, file_path: str, ntype: str
 ):
     if ntype == 'file':
         nid = file_path
@@ -1004,8 +1002,9 @@ def search_dependency_graph_one_hop(
     else:
         raise NotImplementedError
 
-    G = pickle.load(open(f'{DEPENDENCY_GRAPH_LOC}/{issue_id}.pkl', 'rb'))
-
+    # G = pickle.load(open(f'{DEPENDENCY_GRAPH_LOC}/{issue_id}.pkl', 'rb'))
+    G = get_current_call_graph()
+    
     if nid not in G:
         return None
 
@@ -1045,7 +1044,7 @@ contents:
 
 """
 
-    issue_id = get_current_issue_id()
+    # issue_id = get_current_issue_id()
     files, classes, functions = get_current_repo_modules()
 
     # 判断参数的有效性
@@ -1107,7 +1106,7 @@ contents:
             else:
                 return ''
 
-    results = search_dependency_graph_one_hop(issue_id, module_name, file_path, ntype)
+    results = search_dependency_graph_one_hop(module_name, file_path, ntype)
 
     if not results:
         return ''
@@ -1203,67 +1202,67 @@ def get_formatted_node_str(nid, nodes_data):
     return formatted_text
 
 
-def search_interactions_among_modules(module_ids: list[str]):
-    """Analyze the interactions between specified modules by examining a pre-built dependency graph.
-    Args:
-        module_ids (list[str]): A list of unique identifiers for modules to analyze.
-                                Each identifier corresponds to either a file or a function/class within a file:
-                                - For files, the identifier is the full file path, e.g., 'full_path1/file1.py'.
-                                - For functions or classes, the identifier includes the file path and the module name, e.g.,
-                                  'full_path1/file1.py (function: MyClass1.entry_function)' or 'full_path1/file1.py (class: MyClass2)'.
-    Returns:
-        str: A formatted string describing the interactions (edges) between the specified modules in the dependency graph.
-             The format shows relationships between source and target modules, such as:
-             'source_file (type: source_module) -> relation -> target_file (type: target_module)'.
-             Returns `None` if no interactions are found.
-    """
+# def search_interactions_among_modules(module_ids: list[str]):
+#     """Analyze the interactions between specified modules by examining a pre-built dependency graph.
+#     Args:
+#         module_ids (list[str]): A list of unique identifiers for modules to analyze.
+#                                 Each identifier corresponds to either a file or a function/class within a file:
+#                                 - For files, the identifier is the full file path, e.g., 'full_path1/file1.py'.
+#                                 - For functions or classes, the identifier includes the file path and the module name, e.g.,
+#                                   'full_path1/file1.py (function: MyClass1.entry_function)' or 'full_path1/file1.py (class: MyClass2)'.
+#     Returns:
+#         str: A formatted string describing the interactions (edges) between the specified modules in the dependency graph.
+#              The format shows relationships between source and target modules, such as:
+#              'source_file (type: source_module) -> relation -> target_file (type: target_module)'.
+#              Returns `None` if no interactions are found.
+#     """
 
-    issue_id, _, structure = get_current_issue_data()
-    G = pickle.load(open(f'{DEPENDENCY_GRAPH_LOC}/{issue_id}.pkl', 'rb'))
-    searcher = RepoSearcher(G)
+#     issue_id, _, structure = get_current_issue_data()
+#     G = pickle.load(open(f'{DEPENDENCY_GRAPH_LOC}/{issue_id}.pkl', 'rb'))
+#     searcher = RepoSearcher(G)
 
-    nids = []
-    for mid in module_ids:
-        if '(' not in mid and mid in G:
-            nids.append(mid)
-        else:
-            module_id, ntype = extract_module_id(mid)
-            if module_id and module_id in G:
-                nids.append(module_id)
+#     nids = []
+#     for mid in module_ids:
+#         if '(' not in mid and mid in G:
+#             nids.append(mid)
+#         else:
+#             module_id, ntype = extract_module_id(mid)
+#             if module_id and module_id in G:
+#                 nids.append(module_id)
 
-    if not nids:
-        return 'None'
+#     if not nids:
+#         return 'None'
 
-    # Initialize an empty set to store all the nodes in the paths
-    nodes_in_paths = set()
+#     # Initialize an empty set to store all the nodes in the paths
+#     nodes_in_paths = set()
 
-    # Collect all nodes and edges that are part of the paths between pairs of nodes
-    for i, node in enumerate(nids):
-        for other_node in nids[i + 1 :]:
-            try:
-                # Find the shortest path between the pair
-                path = nx.shortest_path(G, source=node, target=other_node)
-                nodes_in_paths.update(path)
-            except nx.NetworkXNoPath:
-                continue
+#     # Collect all nodes and edges that are part of the paths between pairs of nodes
+#     for i, node in enumerate(nids):
+#         for other_node in nids[i + 1 :]:
+#             try:
+#                 # Find the shortest path between the pair
+#                 path = nx.shortest_path(G, source=node, target=other_node)
+#                 nodes_in_paths.update(path)
+#             except nx.NetworkXNoPath:
+#                 continue
 
-    if nodes_in_paths:
-        print(nodes_in_paths)
-        edges, node_data = searcher.subgraph(nodes_in_paths)
-    else:
-        edges, node_data = searcher.subgraph(nids)
-    # print(nids, edges)
+#     if nodes_in_paths:
+#         print(nodes_in_paths)
+#         edges, node_data = searcher.subgraph(nodes_in_paths)
+#     else:
+#         edges, node_data = searcher.subgraph(nids)
+#     # print(nids, edges)
 
-    edge_str = ''
-    edge_template = """{source_nid} -> {relation} -> {tartget_id}\n"""
-    for edge in edges:
-        source_nid = get_formatted_node_str(edge[0], node_data)
-        tartget_id = get_formatted_node_str(edge[1], node_data)
+#     edge_str = ''
+#     edge_template = """{source_nid} -> {relation} -> {tartget_id}\n"""
+#     for edge in edges:
+#         source_nid = get_formatted_node_str(edge[0], node_data)
+#         tartget_id = get_formatted_node_str(edge[1], node_data)
 
-        edge_str += edge_template.format(
-            source_nid=source_nid, relation=edge[2], tartget_id=tartget_id
-        )
-    return edge_str
+#         edge_str += edge_template.format(
+#             source_nid=source_nid, relation=edge[2], tartget_id=tartget_id
+#         )
+#     return edge_str
 
 
 __all__ = [

@@ -10,7 +10,7 @@ import torch.multiprocessing as mp
 from build_graph import add_edges, build_graph, convert_edges_to_invokes
 from build_graph_v2 import build_graph_v2
 from datasets import load_dataset
-from utils.setup_swebench_repo import setup_swebench_repo
+from openhands.runtime.plugins.agent_skills.repo_ops.utils.util import setup_swebench_repo
 
 
 def list_folders(path):

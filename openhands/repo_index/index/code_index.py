@@ -104,9 +104,10 @@ class CodeIndex:
         docstore = SimpleDocumentStore.from_persist_dir(persist_dir)
 
         settings = IndexSettings.from_persist_dir(persist_dir)
+        # TODO: process in `get_embed_model`
         embed_model = AzureOpenAIEmbedding(
             model='text-embedding-3-small',
-            deployment_name='miblab-text-embed-small',
+            deployment_name=os.environ.get('DEPLOYMENT_NAME_EMBED'),
             api_key=os.environ.get('AZURE_OPENAI_API_KEY_EMBED'),
             azure_endpoint=os.environ.get('AZURE_OPENAI_ENDPOINT_EMBED'),
             api_version='2024-06-01',

@@ -225,9 +225,6 @@ def create_structure(directory_path):
             if file_name.endswith('.py'):
                 file_path = os.path.join(root, file_name)
                 class_info, function_names, file_lines = parse_python_file(file_path)
-                if not class_info and not function_names and not file_lines:
-                    # parse error
-                    return None
                 curr_struct[file_name] = {
                     'classes': class_info,
                     'functions': function_names,

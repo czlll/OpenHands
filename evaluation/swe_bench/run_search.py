@@ -37,9 +37,14 @@ from openhands.events.serialization.event import event_to_dict
 from openhands.runtime.base import Runtime
 from openhands.runtime.utils.shutdown_listener import sleep_if_should_continue
 from openhands.utils.async_utils import call_async_from_sync
+from openhands.runtime.plugins.agent_skills.repo_ops.utils.util import zip_directory
 
 USE_HINT_TEXT = os.environ.get('USE_HINT_TEXT', 'false').lower() == 'true'
 USE_INSTANCE_IMAGE = os.environ.get('USE_INSTANCE_IMAGE', 'false').lower() == 'true'
+
+# SET THIS IF YOU WANT TO USE THE PREPROCESSED FILES
+INDEX_STORE_LOC = os.environ.get('INDEX_STORE_LOC')
+print('INDEX_STORE_LOC: ', INDEX_STORE_LOC)
 
 AGENT_CLS_TO_FAKE_USER_RESPONSE_FN = {
     'CodeActAgent': codeact_user_response,
@@ -135,7 +140,9 @@ def get_config(
     else:
         base_container_image = SWE_BENCH_CONTAINER_IMAGE
         logger.info(f'Using swe-bench container image: {base_container_image}')
-
+    
+    workspace_dir_name = _get_swebench_workspace_dir_name(instance)
+    instance_id = instance['instance_id']
     config = AppConfig(
         default_agent=metadata.agent_class,
         run_as_openhands=False,
@@ -152,6 +159,13 @@ def get_config(
             api_key=os.environ.get('ALLHANDS_API_KEY', None),
             remote_runtime_api_url=os.environ.get('SANDBOX_REMOTE_RUNTIME_API_URL'),
             keep_remote_runtime_alive=False,
+            runtime_startup_env_vars={
+                'REPO_DIR': f'/workspace/{workspace_dir_name}/',
+                'INDEX_DATA_DIR': f'/workspace/repo_data/index_data',
+                'DEPLOYMENT_NAME_EMBED': os.environ.get('SANDBOX_DEPLOYMENT_NAME_EMBED'),
+                'AZURE_OPENAI_API_KEY_EMBED': os.environ.get('SANDBOX_AZURE_OPENAI_API_KEY'),
+                'AZURE_OPENAI_ENDPOINT_EMBED': os.environ.get('SANDBOX_AZURE_OPENAI_ENDPOINT'),
+            }
         ),
         # do not mount workspace
         workspace_base=None,
@@ -218,10 +232,7 @@ def initialize_runtime(
         logger.info(action, extra={'msg_type': 'ACTION'})
         obs = runtime.run_action(action)
         logger.info(obs, extra={'msg_type': 'OBSERVATION'})
-        assert_and_raise(
-            obs.exit_code == 0,
-            f'Failed to create /swe_util/eval_data/instances: {str(obs)}',
-        )
+        assert_and_raise(obs.exit_code == 0, f'Failed to create /swe_util/eval_data/instances: {str(obs)}')
 
         swe_instance_json_name = 'swe-bench-instance.json'
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -236,7 +247,60 @@ def initialize_runtime(
 
             # Copy the file to the desired location
             runtime.copy_to(temp_file_path, '/swe_util/eval_data/instances/')
-
+        
+        # copy processed data to runtime (for search tools)
+        action = CmdRunAction(command='mkdir -p /workspace/repo_data/index_data/')
+        action.timeout = 600
+        logger.info(action, extra={'msg_type': 'ACTION'})
+        obs = runtime.run_action(action)
+        logger.info(obs, extra={'msg_type': 'OBSERVATION'})
+        assert_and_raise(
+            obs.exit_code == 0,
+            f'Failed to create /workspace/repo_data/index_data: {str(obs)}',
+        )
+        
+        index_dir = os.path.join(INDEX_STORE_LOC, instance['instance_id'])
+        instance_id = instance['instance_id']
+        index_file = os.path.join(INDEX_STORE_LOC, f'{instance_id}.zip')
+        if os.path.exists(index_dir) and not os.path.exists(index_file):
+            index_file = zip_directory(index_dir)
+        assert_and_raise(
+            os.path.exists(index_file),
+            f'No index data exist: {instance['instance_id']}',
+        )
+        runtime.copy_to(index_file, '/workspace/repo_data/index_data/')
+        action = CmdRunAction(
+            command=f'ls /workspace/repo_data/index_data/'
+        )
+        action.timeout = 600
+        logger.info(action, extra={'msg_type': 'ACTION'})
+        obs = runtime.run_action(action)
+        logger.info(obs, extra={'msg_type': 'OBSERVATION'})
+        import pdb
+        pdb.set_trace()
+        
+        # action = CmdRunAction(command='apt update')
+        # obs = runtime.run_action(action)
+        # action = CmdRunAction(command='apt install unzip')
+        # obs = runtime.run_action(action)
+        # action = CmdRunAction(
+        #     command=f'ls /workspace/repo_data/index_data/'
+        # )
+        # action.timeout = 600
+        # logger.info(action, extra={'msg_type': 'ACTION'})
+        # obs = runtime.run_action(action)
+        # logger.info(obs, extra={'msg_type': 'OBSERVATION'})
+        
+        # action = CmdRunAction(
+        #     command=f'unzip /workspace/repo_data/index_data/{instance_id}.zip -d /workspace/repo_data/index_data/'
+        # )
+        # action.timeout = 600
+        # logger.info(action, extra={'msg_type': 'ACTION'})
+        # obs = runtime.run_action(action)
+        # logger.info(obs, extra={'msg_type': 'OBSERVATION'})
+        # import pdb
+        # pdb.set_trace()
+        
         # inject the instance swe entry
         runtime.copy_to(
             str(os.path.join(script_dir, 'scripts/setup/instance_swe_entry.sh')),
