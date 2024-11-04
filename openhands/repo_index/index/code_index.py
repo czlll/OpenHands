@@ -21,7 +21,6 @@ from llama_index.core.vector_stores.types import (
     VectorStoreQuery,
 )
 from llama_index.embeddings.azure_openai import AzureOpenAIEmbedding
-
 from rapidfuzz import fuzz
 
 from openhands.repo_index.codeblocks.codeblocks import (
