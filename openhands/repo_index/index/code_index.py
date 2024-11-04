@@ -22,12 +22,6 @@ from llama_index.core.vector_stores.types import (
 )
 from llama_index.embeddings.azure_openai import AzureOpenAIEmbedding
 
-secret = json.load(
-    open('openhands/runtime/plugins/agent_skills/repo_ops/data/secret.json', 'r')
-)
-os.environ['AZURE_OPENAI_ENDPOINT'] = secret['AZURE_OPENAI_ENDPOINT']
-os.environ['AZURE_OPENAI_API_KEY'] = secret['AZURE_OPENAI_API_KEY']
-
 from rapidfuzz import fuzz
 
 from openhands.repo_index.codeblocks.codeblocks import (
@@ -114,8 +108,8 @@ class CodeIndex:
         embed_model = AzureOpenAIEmbedding(
             model='text-embedding-3-small',
             deployment_name='miblab-text-embed-small',
-            api_key=os.environ.get('AZURE_OPENAI_API_KEY'),
-            azure_endpoint=os.environ.get('AZURE_OPENAI_ENDPOINT'),
+            api_key=os.environ.get('AZURE_OPENAI_API_KEY_EMBED'),
+            azure_endpoint=os.environ.get('AZURE_OPENAI_ENDPOINT_EMBED'),
             api_version='2024-06-01',
         )
 
