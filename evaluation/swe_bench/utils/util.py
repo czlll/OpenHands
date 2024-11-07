@@ -8,23 +8,24 @@ from copy import deepcopy
 from typing import DefaultDict, List, Optional
 
 from datasets import load_dataset
+
+from evaluation.swe_bench.utils.repo import setup_github_repo
 from openhands.runtime.plugins.agent_skills.repo_ops.utils.get_repo_structure import (
     get_project_structure_from_scratch,
 )
 from openhands.runtime.plugins.agent_skills.repo_ops.utils.preprocess_data import (
     filter_none_python,
     filter_out_test_files,
+    get_full_file_paths_and_classes_and_functions,
     line_wrap_content,
     transfer_arb_locs_to_locs,
-    get_full_file_paths_and_classes_and_functions
 )
 
-from evaluation.swe_bench.utils.repo import setup_github_repo
-
 # SET THIS IF YOU WANT TO USE THE PREPROCESSED FILES
-PROJECT_FILE_LOC = os.environ.get("PROJECT_FILE_LOC")
+PROJECT_FILE_LOC = os.environ.get('PROJECT_FILE_LOC')
 # DEPENDENCY_GRAPH_LOC = os.environ.get("DEPENDENCY_GRAPH_LOC")
 # INDEX_STORE_LOC = os.environ.get("INDEX_STORE_LOC")
+
 
 def find_matching_files_from_list(file_list, file_pattern):
     """
@@ -288,8 +289,8 @@ def get_repo_dir_name(repo: str):
 
 def zip_directory(directory_path):
     # Get the directory name for the zip file
-    zip_file_path = f"{directory_path}.zip"
-    
+    zip_file_path = f'{directory_path}.zip'
+
     # Create a ZipFile object and add the directory to it
     with zipfile.ZipFile(zip_file_path, 'w', zipfile.ZIP_DEFLATED) as zip_file:
         for root, dirs, files in os.walk(directory_path):
@@ -297,14 +298,15 @@ def zip_directory(directory_path):
                 file_path = os.path.join(root, file)
                 # Add file to the zip file with the relative path
                 zip_file.write(file_path, os.path.relpath(file_path, directory_path))
-    
+
     return zip_file_path
+
 
 def get_all_valid_files(instance_id):
     instance = get_meta_data(instance_id)
     structure = get_repo_structures(instance)
     files, _, _ = get_full_file_paths_and_classes_and_functions(structure)
-    
+
     all_valid_files = []
     for file_content in files:
         file = file_content[0]

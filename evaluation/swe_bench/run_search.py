@@ -10,7 +10,12 @@ from datasets import load_dataset
 
 import openhands.agenthub
 from evaluation.swe_bench.prompt import CODEACT_SWE_PROMPT
-from evaluation.swe_bench.search_prompt import SEARCH_INSTRUCTION, FAKE_USER_MSG_FOR_LOC
+from evaluation.swe_bench.search_prompt import FAKE_USER_MSG_FOR_LOC, SEARCH_INSTRUCTION
+from evaluation.swe_bench.utils.process_output import (
+    convert_to_loc_edit_list,
+    get_loc_edit_dict_from_raw_sample_output,
+)
+from evaluation.swe_bench.utils.util import get_all_valid_files
 from evaluation.utils.shared import (
     EvalException,
     EvalMetadata,
@@ -38,13 +43,6 @@ from openhands.events.serialization.event import event_to_dict
 from openhands.runtime.base import Runtime
 from openhands.runtime.utils.shutdown_listener import sleep_if_should_continue
 from openhands.utils.async_utils import call_async_from_sync
-
-from evaluation.swe_bench.utils.process_output import (
-    get_loc_edit_dict_from_raw_output,
-    get_loc_edit_dict_from_raw_sample_output,
-    convert_to_loc_edit_list,
-)
-from evaluation.swe_bench.utils.util import get_all_valid_files, zip_directory
 
 USE_HINT_TEXT = os.environ.get('USE_HINT_TEXT', 'false').lower() == 'true'
 USE_INSTANCE_IMAGE = os.environ.get('USE_INSTANCE_IMAGE', 'false').lower() == 'true'
@@ -149,7 +147,7 @@ def get_config(
     else:
         base_container_image = SWE_BENCH_CONTAINER_IMAGE
         logger.info(f'Using swe-bench container image: {base_container_image}')
-    
+
     workspace_dir_name = _get_swebench_workspace_dir_name(instance)
     instance_id = instance['instance_id']
     config = AppConfig(
@@ -171,10 +169,16 @@ def get_config(
             runtime_startup_env_vars={
                 'REPO_DIR': f'/workspace/{workspace_dir_name}/',
                 'INDEX_DATA_DIR': f'/repo_data/index_data/{instance_id}/',
-                'DEPLOYMENT_NAME_EMBED': os.environ.get('SANDBOX_DEPLOYMENT_NAME_EMBED'),
-                'AZURE_OPENAI_API_KEY_EMBED': os.environ.get('SANDBOX_AZURE_OPENAI_API_KEY'),
-                'AZURE_OPENAI_ENDPOINT_EMBED': os.environ.get('SANDBOX_AZURE_OPENAI_ENDPOINT'),
-            }
+                'DEPLOYMENT_NAME_EMBED': os.environ.get(
+                    'SANDBOX_DEPLOYMENT_NAME_EMBED'
+                ),
+                'AZURE_OPENAI_API_KEY_EMBED': os.environ.get(
+                    'SANDBOX_AZURE_OPENAI_API_KEY'
+                ),
+                'AZURE_OPENAI_ENDPOINT_EMBED': os.environ.get(
+                    'SANDBOX_AZURE_OPENAI_ENDPOINT'
+                ),
+            },
         ),
         # do not mount workspace
         workspace_base=None,
@@ -244,7 +248,10 @@ def initialize_runtime(
         logger.info(action, extra={'msg_type': 'ACTION'})
         obs = runtime.run_action(action)
         logger.info(obs, extra={'msg_type': 'OBSERVATION'})
-        assert_and_raise(obs.exit_code == 0, f'Failed to create /swe_util/eval_data/instances: {str(obs)}')
+        assert_and_raise(
+            obs.exit_code == 0,
+            f'Failed to create /swe_util/eval_data/instances: {str(obs)}',
+        )
 
         swe_instance_json_name = 'swe-bench-instance.json'
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -259,7 +266,7 @@ def initialize_runtime(
 
             # Copy the file to the desired location
             runtime.copy_to(temp_file_path, '/swe_util/eval_data/instances/')
-        
+
         # copy processed data to runtime (for search tools)
         # action = CmdRunAction(command='mkdir -p /workspace/repo_data/index_data')
         action = CmdRunAction(command='mkdir -p /repo_data/index_data')
@@ -271,7 +278,7 @@ def initialize_runtime(
             obs.exit_code == 0,
             f'Failed to create /repo_data/index_data: {str(obs)}',
         )
-        
+
         index_dir = os.path.join(INDEX_STORE_LOC, instance['instance_id'])
         # instance_id = instance['instance_id']
         assert_and_raise(
@@ -285,7 +292,7 @@ def initialize_runtime(
         # runtime.copy_to(f'{index_dir}/vector_index.faiss', '/repo_data/index_data/')
         # runtime.copy_to(f'{index_dir}/vector_index.json', '/repo_data/index_data/')
         runtime.copy_to(index_dir, '/repo_data/index_data/', recursive=True)
-        
+
         # inject the instance swe entry
         runtime.copy_to(
             str(os.path.join(script_dir, 'scripts/setup/instance_swe_entry.sh')),
@@ -408,7 +415,7 @@ def complete_runtime(
     git_patch = None
     while n_retries < 5:
         # TODO: localization
-        
+
         # git diff
         action = CmdRunAction(
             command=f'git diff --no-color --cached {instance["base_commit"]}',
@@ -507,19 +514,24 @@ def process_instance(
         raise ValueError('State should not be None.')
 
     histories = [event_to_dict(event) for event in state.history.get_events()]
-    
+
     # final message
     loc_output = histories[-1]['message']
     all_valid_files = get_all_valid_files(instance.instance_id)
-    file_list, _, loc_edit_dict = get_loc_edit_dict_from_raw_sample_output(loc_output, all_valid_files)
+    file_list, _, loc_edit_dict = get_loc_edit_dict_from_raw_sample_output(
+        loc_output, all_valid_files
+    )
     found_edit_locs = convert_to_loc_edit_list(loc_edit_dict, file_list)
-    test_result.update({
-        "found_files": file_list,
-        "found_edit_locs": found_edit_locs,
-    })
+    test_result.update(
+        {
+            'found_files': file_list,
+            'found_edit_locs': found_edit_locs,
+        }
+    )
     import pdb
+
     pdb.set_trace()
-    
+
     metrics = state.metrics.get() if state.metrics else None
 
     # Save the output

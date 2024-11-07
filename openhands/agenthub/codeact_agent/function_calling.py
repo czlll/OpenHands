@@ -491,7 +491,7 @@ def get_tools(
         tools.append(IPythonTool)
     if codeact_enable_llm_editor:
         tools.append(LLMBasedFileEditTool)
-    if codeact_enable_str_editor: # SOTA
+    if codeact_enable_str_editor:  # SOTA
         tools.append(StrReplaceEditorTool)
     if codeact_enable_localize:
         tools.append(SearchRepoTool)

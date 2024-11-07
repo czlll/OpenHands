@@ -19,19 +19,28 @@ Functions:
 import logging
 import os
 import re
-
 from copy import deepcopy
 from typing import Dict, Optional
 
-import networkx as nx
 from llama_index.retrievers.bm25 import BM25Retriever
 
 from openhands.repo_index import Workspace
 from openhands.runtime.plugins.agent_skills.repo_ops.utils.compress_file import (
     get_skeleton,
 )
+
+# get_meta_data,
+# get_repo_dir_name,
+# get_repo_structures,
+# setup_full_swebench_repo,
+from openhands.runtime.plugins.agent_skills.repo_ops.utils.get_repo_structure import (
+    create_structure,
+)
 from openhands.runtime.plugins.agent_skills.repo_ops.utils.graph_encoder import (
     RepoSearcher,
+)
+from openhands.runtime.plugins.agent_skills.repo_ops.utils.graph_encoder.dependency_graph.build_graph_v2 import (
+    build_graph_v2,
 )
 from openhands.runtime.plugins.agent_skills.repo_ops.utils.preprocess_data import (
     get_full_file_paths_and_classes_and_functions,
@@ -42,16 +51,6 @@ from openhands.runtime.plugins.agent_skills.repo_ops.utils.util import (
     # DEPENDENCY_GRAPH_LOC,
     # INDEX_STORE_LOC,
     find_matching_files_from_list,
-    # get_meta_data,
-    # get_repo_dir_name,
-    # get_repo_structures,
-    # setup_full_swebench_repo,
-)
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.get_repo_structure import (
-    create_structure
-)
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.graph_encoder.dependency_graph.build_graph_v2 import (
-    build_graph_v2
 )
 
 logger = logging.getLogger(__name__)
@@ -72,6 +71,8 @@ G: dict | None = None
 # INDEX_STORE_LOC = os.path.join(REPO_DATA_DIR, 'index_data')
 
 FOUND_MODULES: list[str] = []
+
+
 def add_found_modules(file_path: str, module_name: str, ntype: str = 'file'):
     global FOUND_MODULES
     if ntype == 'file':
@@ -85,6 +86,7 @@ def add_found_modules(file_path: str, module_name: str, ntype: str = 'file'):
 def get_found_modules():
     global FOUND_MODULES
     return FOUND_MODULES
+
 
 def get_current_call_graph():
     global G
@@ -103,8 +105,8 @@ def get_current_issue_structure():
         REPO_DIR = os.environ.get('REPO_DIR')
         logger.info('REPO_DIR: ' + REPO_DIR)
         CURRENT_STRUCTURE = create_structure(REPO_DIR)
-    
-    logger.info('CURRENT_STRUCTURE:' + str(CURRENT_STRUCTURE==None))
+
+    logger.info('CURRENT_STRUCTURE:' + str(CURRENT_STRUCTURE == None))
     return CURRENT_STRUCTURE
 
 
@@ -115,7 +117,7 @@ def get_current_repo_modules():
         ALL_FILE, ALL_CLASS, ALL_FUNC = get_full_file_paths_and_classes_and_functions(
             structure
         )
-        
+
     return ALL_FILE, ALL_CLASS, ALL_FUNC
 
 
@@ -136,7 +138,7 @@ def get_repo_structure() -> str:
     Returns:
         str: The tree structure of the repository where the issue resides.
     """
-    
+
     structure = get_current_issue_structure()
 
     # only structure
@@ -729,7 +731,7 @@ def search_term_in_repo(query: str, file_pattern: Optional[str] = '**/*.py') -> 
     Returns:
         str: A formatted string containing the combined results from both BM25 and semantic search, including file paths and the retrieved code snippets (the partial code of a module or the skeleton of the specific module).
     """
-    
+
     bm25_result = '### Retrieving by bm25 algorithm:\n'
     bm25_result += bm25_retrieve(
         query=query, file_pattern=file_pattern, similarity_top_k=10
@@ -761,7 +763,6 @@ def bm25_retrieve(
     """
 
     # issue_id, instance, structure = get_current_issue_data()
-    
 
     # repo_playground = get_repo_save_dir()
     # repo_dir = setup_full_swebench_repo(
@@ -771,11 +772,11 @@ def bm25_retrieve(
     #     INDEX_STORE_LOC, get_repo_dir_name(instance['instance_id'])
     # )
     # workspace = Workspace.from_dirs(repo_dir=repo_dir, index_dir=persist_dir)
-    
+
     # global INDEX_DATA_DIR, REPO_DIR
     REPO_DIR = os.environ.get('REPO_DIR')
     INDEX_DATA_DIR = os.environ.get('INDEX_DATA_DIR')
-    
+
     workspace = Workspace.from_dirs(repo_dir=REPO_DIR, index_dir=INDEX_DATA_DIR)
     code_index = workspace.code_index
     # bm25_retriever = BM25Retriever.from_persist_dir("plugins/retrieval_tools/bm25_retriever/persist_data/")
@@ -957,8 +958,10 @@ def semantic_search(
 
 
 def search_dependency_graph_one_hop(
-    # issue_id: str, 
-    module_name: str, file_path: str, ntype: str
+    # issue_id: str,
+    module_name: str,
+    file_path: str,
+    ntype: str,
 ):
     if ntype == 'file':
         nid = file_path
@@ -969,7 +972,7 @@ def search_dependency_graph_one_hop(
 
     # G = pickle.load(open(f'{DEPENDENCY_GRAPH_LOC}/{issue_id}.pkl', 'rb'))
     G = get_current_call_graph()
-    
+
     if nid not in G:
         return None
 

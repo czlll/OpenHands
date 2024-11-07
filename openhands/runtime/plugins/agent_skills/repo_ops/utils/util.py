@@ -1,5 +1,6 @@
 import fnmatch
 
+
 def find_matching_files_from_list(file_list, file_pattern):
     """
     Find and return a list of file paths from the given list that match the given keyword or pattern.

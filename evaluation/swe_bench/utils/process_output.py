@@ -3,7 +3,10 @@ def add_new_file(new_file, valid_files, found_files=None):
         found_files.append(new_file)
     return found_files
 
-def get_loc_related_dict_from_raw_output(raw_output, valid_files, found_files=None, loc_dict=None):
+
+def get_loc_related_dict_from_raw_output(
+    raw_output, valid_files, found_files=None, loc_dict=None
+):
     assert valid_files
     # Remove the triple backticks and any surrounding whitespace
     raw_output = raw_output.strip('` \n')
@@ -39,27 +42,31 @@ def get_loc_related_dict_from_raw_output(raw_output, valid_files, found_files=No
                 loc_dict[current_file].append(line)
     return found_files, loc_dict
 
+
 def get_additional_artifact_loc_related_from_dict(found_files, found_related_locs):
     files = [f for f in found_files if f in found_related_locs]
-    output = "```\n"
+    output = '```\n'
 
     for file, locs in zip(files, found_related_locs):
-        output += f"{file}\n"
+        output += f'{file}\n'
         for loc in locs:
-            output += f"{loc}\n"
-        output += "\n"
-    output += "```"
+            output += f'{loc}\n'
+        output += '\n'
+    output += '```'
 
-    additional_artifact_loc_related = [{"raw_output": output}]
+    additional_artifact_loc_related = [{'raw_output': output}]
     return additional_artifact_loc_related
 
-def get_loc_edit_dict_from_raw_sample_output(data, valid_files, file_list=None, loc_related_dict=None, loc_edit_dict=None):
+
+def get_loc_edit_dict_from_raw_sample_output(
+    data, valid_files, file_list=None, loc_related_dict=None, loc_edit_dict=None
+):
     valid_top_folder = []
     for fn in valid_files:
         folder = fn.split('/')[0]
         if folder not in valid_top_folder:
             valid_top_folder.append(folder)
-    
+
     # Remove the triple backticks and any surrounding whitespace
     data = data.strip('` \n')
 
@@ -118,7 +125,10 @@ def get_loc_edit_dict_from_raw_sample_output(data, valid_files, file_list=None, 
                 loc_edit_dict[current_file][''].append(line)
     return file_list, loc_related_dict, loc_edit_dict
 
-def get_loc_edit_dict_from_raw_output(raw_output, valid_files, file_list=None, loc_related_dict=None, all_results=None):
+
+def get_loc_edit_dict_from_raw_output(
+    raw_output, valid_files, file_list=None, loc_related_dict=None, all_results=None
+):
     # all_results = [dict() for i in range(raw_output)]
     found_files = []
     if not all_results:
@@ -126,17 +136,23 @@ def get_loc_edit_dict_from_raw_output(raw_output, valid_files, file_list=None, l
     else:
         assert len(all_results) == len(raw_output)
     all_loc_related_dict = []
-        
+
     for i, sample in enumerate(raw_output):
-        file_list, loc_related_dict, loc_edit_dict = get_loc_edit_dict_from_raw_sample_output(
-            sample, valid_files, 
-            # file_list, loc_related_dict, 
-            loc_edit_dict=all_results[i]
-        )  
+        file_list, loc_related_dict, loc_edit_dict = (
+            get_loc_edit_dict_from_raw_sample_output(
+                sample,
+                valid_files,
+                # file_list, loc_related_dict,
+                loc_edit_dict=all_results[i],
+            )
+        )
         all_results[i] = loc_edit_dict
         found_files.append(file_list)
-        all_loc_related_dict.append(loc_related_dict) # TODO: process the loc_related variables
+        all_loc_related_dict.append(
+            loc_related_dict
+        )  # TODO: process the loc_related variables
     return found_files, all_loc_related_dict, all_results
+
 
 def convert_to_loc_related_list(loc_related_dict, file_list):
     loc_related_list = []
@@ -144,14 +160,15 @@ def convert_to_loc_related_list(loc_related_dict, file_list):
         if file in loc_related_dict:
             loc_related_list.append(['\n'.join(loc_related_dict[file])])
         else:
-            loc_related_list.append([""])
+            loc_related_list.append([''])
     return loc_related_list
+
 
 def convert_to_loc_edit_list(loc_edit_dict, file_list):
     if not isinstance(loc_edit_dict, list):
         loc_edit_dict = [loc_edit_dict]
         file_list = [file_list]
-        
+
     loc_edit_list = []
     for i, sample in enumerate(loc_edit_dict):
         sample_list = []
@@ -163,11 +180,13 @@ def convert_to_loc_edit_list(loc_edit_dict, file_list):
                     data += sample[file][modual]
                 sample_list.append(['\n'.join(data)])
             else:
-                sample_list.append([""])
+                sample_list.append([''])
         loc_edit_list.append(sample_list)
     return loc_edit_list
 
+
 import re
+
 
 def extract_python_file_path(line, valid_folders):
     """
@@ -196,27 +215,28 @@ def extract_python_file_path(line, valid_folders):
                 if cur_start_index < start_index:
                     start_index = cur_start_index
         if start_index < len(matched_fp):
-            return matched_fp[start_index:] # Return the max matched file path
+            return matched_fp[start_index:]  # Return the max matched file path
         return None
     else:
         return None  # Return None if no match is found
 
-    
 
 # import re
 def extract_result(summary):
-    pattern = r"```(.*?)```"
+    pattern = r'```(.*?)```'
     match = re.search(pattern, summary, re.DOTALL)
 
     # Extract and format the result if a match is found
     if match:
-        result = f"```{match.group(1)}```"
+        result = f'```{match.group(1)}```'
     else:
-        result = ""
-        print("No match found")
+        result = ''
+        print('No match found')
     return result
 
+
 # output_loc = extract_result(summary_output_loc)
+
 
 def merge_sample_locations(found_files, found_edit_locs):
     merged_found_files = []
@@ -234,7 +254,7 @@ def merge_sample_locations(found_files, found_edit_locs):
 
     merged_loc_edit_list = []
     for i, file in enumerate(merged_found_files):
-        merged_loc_edit_list.append(["\n".join(merged_found_edit_locs[file])])
+        merged_loc_edit_list.append(['\n'.join(merged_found_edit_locs[file])])
 
     # merged_loc_edit_list = convert_to_loc_edit_list([merged_found_edit_locs],[merged_found_files])
     return merged_found_files, merged_loc_edit_list
