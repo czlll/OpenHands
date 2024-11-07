@@ -108,6 +108,9 @@ class CodeActAgent(Agent):
                 codeact_enable_browsing_delegate=self.config.codeact_enable_browsing_delegate,
                 codeact_enable_jupyter=self.config.codeact_enable_jupyter,
                 codeact_enable_llm_editor=self.config.codeact_enable_llm_editor,
+                codeact_enable_cmd=self.config.codeact_enable_cmd,
+                codeact_enable_str_editor=self.config.codeact_enable_str_editor,
+                codeact_enable_localize=self.config.codeact_enable_localize,
             )
             logger.debug(
                 f'TOOLS loaded for CodeActAgent: {json.dumps(self.tools, indent=2)}'

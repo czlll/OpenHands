@@ -10,6 +10,7 @@ from datasets import load_dataset
 
 import openhands.agenthub
 from evaluation.swe_bench.prompt import CODEACT_SWE_PROMPT
+from evaluation.swe_bench.search_prompt import SEARCH_INSTRUCTION, FAKE_USER_MSG_FOR_LOC
 from evaluation.utils.shared import (
     EvalException,
     EvalMetadata,
@@ -37,7 +38,13 @@ from openhands.events.serialization.event import event_to_dict
 from openhands.runtime.base import Runtime
 from openhands.runtime.utils.shutdown_listener import sleep_if_should_continue
 from openhands.utils.async_utils import call_async_from_sync
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.util import zip_directory
+
+from evaluation.swe_bench.utils.process_output import (
+    get_loc_edit_dict_from_raw_output,
+    get_loc_edit_dict_from_raw_sample_output,
+    convert_to_loc_edit_list,
+)
+from evaluation.swe_bench.utils.util import get_all_valid_files, zip_directory
 
 USE_HINT_TEXT = os.environ.get('USE_HINT_TEXT', 'false').lower() == 'true'
 USE_INSTANCE_IMAGE = os.environ.get('USE_INSTANCE_IMAGE', 'false').lower() == 'true'
@@ -108,6 +115,8 @@ def get_instruction(instance: pd.Series, metadata: EvalMetadata):
             # '# Problem Statement\n'
             # f'{instance.problem_statement}\n\n'
         )
+        instruction += SEARCH_INSTRUCTION
+        instruction += '\n' + FAKE_USER_MSG_FOR_LOC
     return instruction
 
 
@@ -161,7 +170,7 @@ def get_config(
             keep_remote_runtime_alive=False,
             runtime_startup_env_vars={
                 'REPO_DIR': f'/workspace/{workspace_dir_name}/',
-                'INDEX_DATA_DIR': f'/workspace/repo_data/index_data',
+                'INDEX_DATA_DIR': f'/repo_data/index_data/{instance_id}/',
                 'DEPLOYMENT_NAME_EMBED': os.environ.get('SANDBOX_DEPLOYMENT_NAME_EMBED'),
                 'AZURE_OPENAI_API_KEY_EMBED': os.environ.get('SANDBOX_AZURE_OPENAI_API_KEY'),
                 'AZURE_OPENAI_ENDPOINT_EMBED': os.environ.get('SANDBOX_AZURE_OPENAI_ENDPOINT'),
@@ -184,6 +193,9 @@ def get_config(
         codeact_enable_jupyter=False,
         codeact_enable_browsing_delegate=False,
         codeact_enable_llm_editor=False,
+        # codeact_enable_cmd=True,
+        # codeact_enable_str_editor=True,
+        codeact_enable_localize=True,
     )
     config.set_agent_config(agent_config)
     return config
@@ -249,57 +261,30 @@ def initialize_runtime(
             runtime.copy_to(temp_file_path, '/swe_util/eval_data/instances/')
         
         # copy processed data to runtime (for search tools)
-        action = CmdRunAction(command='mkdir -p /workspace/repo_data/index_data/')
+        # action = CmdRunAction(command='mkdir -p /workspace/repo_data/index_data')
+        action = CmdRunAction(command='mkdir -p /repo_data/index_data')
         action.timeout = 600
         logger.info(action, extra={'msg_type': 'ACTION'})
         obs = runtime.run_action(action)
         logger.info(obs, extra={'msg_type': 'OBSERVATION'})
         assert_and_raise(
             obs.exit_code == 0,
-            f'Failed to create /workspace/repo_data/index_data: {str(obs)}',
+            f'Failed to create /repo_data/index_data: {str(obs)}',
         )
         
         index_dir = os.path.join(INDEX_STORE_LOC, instance['instance_id'])
-        instance_id = instance['instance_id']
-        index_file = os.path.join(INDEX_STORE_LOC, f'{instance_id}.zip')
-        if os.path.exists(index_dir) and not os.path.exists(index_file):
-            index_file = zip_directory(index_dir)
+        # instance_id = instance['instance_id']
         assert_and_raise(
-            os.path.exists(index_file),
+            os.path.exists(index_dir),
             f'No index data exist: {instance['instance_id']}',
         )
-        runtime.copy_to(index_file, '/workspace/repo_data/index_data/')
-        action = CmdRunAction(
-            command=f'ls /workspace/repo_data/index_data/'
-        )
-        action.timeout = 600
-        logger.info(action, extra={'msg_type': 'ACTION'})
-        obs = runtime.run_action(action)
-        logger.info(obs, extra={'msg_type': 'OBSERVATION'})
-        import pdb
-        pdb.set_trace()
-        
-        # action = CmdRunAction(command='apt update')
-        # obs = runtime.run_action(action)
-        # action = CmdRunAction(command='apt install unzip')
-        # obs = runtime.run_action(action)
-        # action = CmdRunAction(
-        #     command=f'ls /workspace/repo_data/index_data/'
-        # )
-        # action.timeout = 600
-        # logger.info(action, extra={'msg_type': 'ACTION'})
-        # obs = runtime.run_action(action)
-        # logger.info(obs, extra={'msg_type': 'OBSERVATION'})
-        
-        # action = CmdRunAction(
-        #     command=f'unzip /workspace/repo_data/index_data/{instance_id}.zip -d /workspace/repo_data/index_data/'
-        # )
-        # action.timeout = 600
-        # logger.info(action, extra={'msg_type': 'ACTION'})
-        # obs = runtime.run_action(action)
-        # logger.info(obs, extra={'msg_type': 'OBSERVATION'})
-        # import pdb
-        # pdb.set_trace()
+        # runtime.copy_to(f'{index_dir}/blocks_by_class_name.json', '/repo_data/index_data/')
+        # runtime.copy_to(f'{index_dir}/blocks_by_function_name.json', '/repo_data/index_data/')
+        # runtime.copy_to(f'{index_dir}/docstore.json', '/repo_data/index_data/')
+        # runtime.copy_to(f'{index_dir}/settings.json', '/repo_data/index_data/')
+        # runtime.copy_to(f'{index_dir}/vector_index.faiss', '/repo_data/index_data/')
+        # runtime.copy_to(f'{index_dir}/vector_index.json', '/repo_data/index_data/')
+        runtime.copy_to(index_dir, '/repo_data/index_data/', recursive=True)
         
         # inject the instance swe entry
         runtime.copy_to(
@@ -422,6 +407,9 @@ def complete_runtime(
     n_retries = 0
     git_patch = None
     while n_retries < 5:
+        # TODO: localization
+        
+        # git diff
         action = CmdRunAction(
             command=f'git diff --no-color --cached {instance["base_commit"]}',
             keep_prompt=False,
@@ -449,6 +437,7 @@ def complete_runtime(
     logger.info('-' * 30)
     logger.info('END Runtime Completion Fn')
     logger.info('-' * 30)
+    # return {'git_patch': git_patch}
     return {'git_patch': git_patch}
 
 
@@ -518,6 +507,19 @@ def process_instance(
         raise ValueError('State should not be None.')
 
     histories = [event_to_dict(event) for event in state.history.get_events()]
+    
+    # final message
+    loc_output = histories[-1]['message']
+    all_valid_files = get_all_valid_files(instance.instance_id)
+    file_list, _, loc_edit_dict = get_loc_edit_dict_from_raw_sample_output(loc_output, all_valid_files)
+    found_edit_locs = convert_to_loc_edit_list(loc_edit_dict, file_list)
+    test_result.update({
+        "found_files": file_list,
+        "found_edit_locs": found_edit_locs,
+    })
+    import pdb
+    pdb.set_trace()
+    
     metrics = state.metrics.get() if state.metrics else None
 
     # Save the output

@@ -3,7 +3,7 @@ import logging
 import os
 import re
 
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.get_repo_structure.get_repo_structure import (
+from openhands.runtime.plugins.agent_skills.repo_ops.utils.get_repo_structure import (
     get_project_structure_from_scratch,
     parse_python_file,
 )

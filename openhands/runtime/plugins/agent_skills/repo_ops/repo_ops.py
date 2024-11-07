@@ -47,7 +47,7 @@ from openhands.runtime.plugins.agent_skills.repo_ops.utils.util import (
     # get_repo_structures,
     # setup_full_swebench_repo,
 )
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.get_repo_structure.get_repo_structure import (
+from openhands.runtime.plugins.agent_skills.repo_ops.utils.get_repo_structure import (
     create_structure
 )
 from openhands.runtime.plugins.agent_skills.repo_ops.utils.graph_encoder.dependency_graph.build_graph_v2 import (
@@ -71,7 +71,6 @@ G: dict | None = None
 # set index_data path
 # INDEX_STORE_LOC = os.path.join(REPO_DATA_DIR, 'index_data')
 
-
 FOUND_MODULES: list[str] = []
 def add_found_modules(file_path: str, module_name: str, ntype: str = 'file'):
     global FOUND_MODULES
@@ -86,21 +85,6 @@ def add_found_modules(file_path: str, module_name: str, ntype: str = 'file'):
 def get_found_modules():
     global FOUND_MODULES
     return FOUND_MODULES
-
-
-# def set_current_repo_data(
-#     # instance_id: Optional[str] = None,
-#     # instance_data: Optional[dict] = None,
-#     # dataset: str = 'princeton-nlp/SWE-bench_Lite',
-#     # split: str = 'test',
-#     rank=0,
-# ):
-#     global CURRENT_STRUCTURE, G
-#     global ALL_FILE, ALL_CLASS, ALL_FUNC
-
-#     if CURRENT_STRUCTURE and G:
-#         return
-
 
 def get_current_call_graph():
     global G
@@ -133,16 +117,6 @@ def get_current_repo_modules():
         )
         
     return ALL_FILE, ALL_CLASS, ALL_FUNC
-
-
-# def get_current_issue_data():
-#     global CURRENT_ISSUE_ID, CURRENT_INSTANCE, CURRENT_STRUCTURE
-#     return CURRENT_ISSUE_ID, CURRENT_INSTANCE, CURRENT_STRUCTURE
-
-
-# def get_repo_save_dir():
-#     global REPO_SAVE_DIR
-#     return REPO_SAVE_DIR
 
 
 file_content_in_block_template = """
@@ -801,7 +775,6 @@ def bm25_retrieve(
     # global INDEX_DATA_DIR, REPO_DIR
     REPO_DIR = os.environ.get('REPO_DIR')
     INDEX_DATA_DIR = os.environ.get('INDEX_DATA_DIR')
-    logger.info('INDEX_DATA_DIR: ' + INDEX_DATA_DIR)
     
     workspace = Workspace.from_dirs(repo_dir=REPO_DIR, index_dir=INDEX_DATA_DIR)
     code_index = workspace.code_index
@@ -913,14 +886,6 @@ def semantic_search(
         str: A formatted string containing the search results, including messages and code snippets of the semantically similar code sections found.
     """
 
-    # issue_id, instance, structure = get_current_issue_data()
-    # repo_playground = get_repo_save_dir()
-    # repo_dir = setup_full_swebench_repo(
-    #     instance_data=instance, repo_base_dir=repo_playground
-    # )
-    # persist_dir = os.path.join(
-    #     INDEX_STORE_LOC, get_repo_dir_name(instance['instance_id'])
-    # )
     REPO_DIR = os.environ.get('REPO_DIR')
     INDEX_DATA_DIR = os.environ.get('INDEX_DATA_DIR')
     workspace = Workspace.from_dirs(repo_dir=REPO_DIR, index_dir=INDEX_DATA_DIR)
@@ -1200,69 +1165,6 @@ def get_formatted_node_str(nid, nodes_data):
         formatted_text = nid
 
     return formatted_text
-
-
-# def search_interactions_among_modules(module_ids: list[str]):
-#     """Analyze the interactions between specified modules by examining a pre-built dependency graph.
-#     Args:
-#         module_ids (list[str]): A list of unique identifiers for modules to analyze.
-#                                 Each identifier corresponds to either a file or a function/class within a file:
-#                                 - For files, the identifier is the full file path, e.g., 'full_path1/file1.py'.
-#                                 - For functions or classes, the identifier includes the file path and the module name, e.g.,
-#                                   'full_path1/file1.py (function: MyClass1.entry_function)' or 'full_path1/file1.py (class: MyClass2)'.
-#     Returns:
-#         str: A formatted string describing the interactions (edges) between the specified modules in the dependency graph.
-#              The format shows relationships between source and target modules, such as:
-#              'source_file (type: source_module) -> relation -> target_file (type: target_module)'.
-#              Returns `None` if no interactions are found.
-#     """
-
-#     issue_id, _, structure = get_current_issue_data()
-#     G = pickle.load(open(f'{DEPENDENCY_GRAPH_LOC}/{issue_id}.pkl', 'rb'))
-#     searcher = RepoSearcher(G)
-
-#     nids = []
-#     for mid in module_ids:
-#         if '(' not in mid and mid in G:
-#             nids.append(mid)
-#         else:
-#             module_id, ntype = extract_module_id(mid)
-#             if module_id and module_id in G:
-#                 nids.append(module_id)
-
-#     if not nids:
-#         return 'None'
-
-#     # Initialize an empty set to store all the nodes in the paths
-#     nodes_in_paths = set()
-
-#     # Collect all nodes and edges that are part of the paths between pairs of nodes
-#     for i, node in enumerate(nids):
-#         for other_node in nids[i + 1 :]:
-#             try:
-#                 # Find the shortest path between the pair
-#                 path = nx.shortest_path(G, source=node, target=other_node)
-#                 nodes_in_paths.update(path)
-#             except nx.NetworkXNoPath:
-#                 continue
-
-#     if nodes_in_paths:
-#         print(nodes_in_paths)
-#         edges, node_data = searcher.subgraph(nodes_in_paths)
-#     else:
-#         edges, node_data = searcher.subgraph(nids)
-#     # print(nids, edges)
-
-#     edge_str = ''
-#     edge_template = """{source_nid} -> {relation} -> {tartget_id}\n"""
-#     for edge in edges:
-#         source_nid = get_formatted_node_str(edge[0], node_data)
-#         tartget_id = get_formatted_node_str(edge[1], node_data)
-
-#         edge_str += edge_template.format(
-#             source_nid=source_nid, relation=edge[2], tartget_id=tartget_id
-#         )
-#     return edge_str
 
 
 __all__ = [

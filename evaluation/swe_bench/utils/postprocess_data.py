@@ -7,7 +7,7 @@ import tokenize
 import uuid
 from collections import OrderedDict
 
-from plugins.agent_skills.location_tools.utils.get_repo_structure.get_patch_info import (
+from evaluation.swe_bench.utils.get_patch_info import (
     parse_patch,
 )
 

@@ -477,17 +477,23 @@ def get_tools(
     codeact_enable_browsing_delegate: bool = False,
     codeact_enable_llm_editor: bool = False,
     codeact_enable_jupyter: bool = False,
+    codeact_enable_cmd: bool = False,
+    codeact_enable_str_editor: bool = False,
+    codeact_enable_localize: bool = False,
 ) -> list[ChatCompletionToolParam]:
     # tools = [CmdRunTool, FinishTool] # SOTA
     tools = [FinishTool]
+    if codeact_enable_cmd:
+        tools.append(CmdRunTool)
     if codeact_enable_browsing_delegate:
         tools.append(BrowserDelegationTool)
     if codeact_enable_jupyter:
         tools.append(IPythonTool)
     if codeact_enable_llm_editor:
         tools.append(LLMBasedFileEditTool)
-    else:
-        # tools.append(StrReplaceEditorTool) # SOTA
+    if codeact_enable_str_editor: # SOTA
+        tools.append(StrReplaceEditorTool)
+    if codeact_enable_localize:
         tools.append(SearchRepoTool)
         tools.append(SearchCallRelTool)
     return tools

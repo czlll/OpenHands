@@ -8,10 +8,11 @@ COMMIT_HASH=$2
 AGENT=$3
 EVAL_LIMIT=$4
 MAX_ITER=$5
-NUM_WORKERS=$6
-DATASET=$7
-SPLIT=$8
-N_RUNS=$9
+OUTPUT_DIR=$6
+NUM_WORKERS=$7
+DATASET=$8
+SPLIT=$9
+N_RUNS=${10}
 
 if [ -z "$NUM_WORKERS" ]; then
   NUM_WORKERS=1
@@ -78,6 +79,7 @@ function run_eval() {
     --llm-config $MODEL_CONFIG \
     --max-iterations $MAX_ITER \
     --eval-num-workers $NUM_WORKERS \
+    --eval-output-dir 'evaluation/evaluation_outputs/outputs/openhands/$OUTPUT_DIR' \
     --eval-note $eval_note \
     --dataset $DATASET \
     --split $SPLIT"

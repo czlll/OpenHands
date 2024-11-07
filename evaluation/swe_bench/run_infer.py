@@ -39,6 +39,7 @@ from openhands.runtime.utils.shutdown_listener import sleep_if_should_continue
 from openhands.utils.async_utils import call_async_from_sync
 
 USE_HINT_TEXT = os.environ.get('USE_HINT_TEXT', 'false').lower() == 'true'
+# USE_HINT_CODE = os.environ.get('USE_HINT_CODE', 'false').lower() == 'true'
 USE_INSTANCE_IMAGE = os.environ.get('USE_INSTANCE_IMAGE', 'false').lower() == 'true'
 
 AGENT_CLS_TO_FAKE_USER_RESPONSE_FN = {
@@ -66,7 +67,7 @@ def get_instruction(instance: pd.Series, metadata: EvalMetadata):
                 f'--- BEGIN HINTS ---\n{instance.hints_text}\n--- END HINTS ---\n'
             )
         instruction += CODEACT_SWE_PROMPT.format(workspace_dir_name=workspace_dir_name)
-    else:
+    else:       
         # Instruction based on Anthropic's official trajectory
         # https://github.com/eschluntz/swe-bench-experiments/tree/main/evaluation/verified/20241022_tools_claude-3-5-sonnet-updated/trajs
         instruction = (
@@ -88,6 +89,17 @@ def get_instruction(instance: pd.Series, metadata: EvalMetadata):
             '5. Think about edgecases and make sure your fix handles them as well\n'
             "Your thinking should be thorough and so it's fine if it's very long.\n"
         )
+        
+        # add localized_code_segments
+        # read from file
+        localized_code_file = os.path.join(os.environ.get("HINT_CODE_LOC"), f'{instance.instance_id}.txt')
+        localized_code_segments = open(localized_code_file).read() if os.path.exists(localized_code_file) else ''
+        if localized_code_segments.strip():
+            instruction += (
+                'Below are some code segments, each from a relevant file. One or more of these files may contain bugs.\n'
+                f'{localized_code_segments}'
+            )
+            
     return instruction
 
 
@@ -155,6 +167,8 @@ def get_config(
         codeact_enable_jupyter=False,
         codeact_enable_browsing_delegate=False,
         codeact_enable_llm_editor=False,
+        codeact_enable_cmd=True,
+        codeact_enable_str_editor=True,
     )
     config.set_agent_config(agent_config)
     return config
