@@ -10,23 +10,37 @@ from typing import DefaultDict, List, Optional
 from datasets import load_dataset
 
 from evaluation.swe_bench.utils.repo import setup_github_repo
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.get_repo_structure import (
-    get_project_structure_from_scratch,
-)
-from openhands.runtime.plugins.agent_skills.repo_ops.utils.preprocess_data import (
-    filter_none_python,
-    filter_out_test_files,
-    get_full_file_paths_and_classes_and_functions,
-    line_wrap_content,
-    transfer_arb_locs_to_locs,
-)
 
 # SET THIS IF YOU WANT TO USE THE PREPROCESSED FILES
 PROJECT_FILE_LOC = os.environ.get('PROJECT_FILE_LOC')
 # DEPENDENCY_GRAPH_LOC = os.environ.get("DEPENDENCY_GRAPH_LOC")
 # INDEX_STORE_LOC = os.environ.get("INDEX_STORE_LOC")
 
+def filter_none_python(structure):
+    for key, value in list(structure.items()):
+        if (
+            'functions' not in value.keys()
+            and 'classes' not in value.keys()
+            and 'text' not in value.keys()
+        ) or not len(value.keys()) == 3:
+            filter_none_python(value)
 
+            if structure[key] == {}:
+                del structure[key]
+        else:
+            if not key.endswith('.py'):
+                del structure[key]
+                
+                
+def filter_out_test_files(structure):
+    """filter out test files from the project structure"""
+    for key, value in list(structure.items()):
+        if key.startswith('test'):
+            del structure[key]
+        elif isinstance(value, dict):
+            filter_out_test_files(value)
+
+   
 def find_matching_files_from_list(file_list, file_pattern):
     """
     Find and return a list of file paths from the given list that match the given keyword or pattern.
@@ -65,12 +79,12 @@ def get_repo_structures(bench_data):
             '`PROJECT_FILE_LOC` is None, get the project structure from scratch'
         )
         # we need to get the project structure directly
-        d = get_project_structure_from_scratch(
-            bench_data['repo'],
-            bench_data['base_commit'],
-            bench_data['instance_id'],
-            'playground',
-        )
+        # d = get_project_structure_from_scratch(
+        #     bench_data['repo'],
+        #     bench_data['base_commit'],
+        #     bench_data['instance_id'],
+        #     'playground',
+        # )
 
     # instance_id = d['instance_id']
     structure = d['structure']
@@ -142,82 +156,69 @@ def combine_by_instance_id(data):
     ]
 
 
-# construct_topn_file_context
-def construct_topn_file_context(
-    file_to_locs,
-    pred_files,
-    file_contents,
-    structure,
-    context_window: int,
-    loc_interval: bool = True,
-    fine_grain_loc_only: bool = False,
-    add_space: bool = False,
-    sticky_scroll: bool = False,
-    no_line_number: bool = True,
-):
-    """Concatenate provided locations to form a context.
-
-    loc: {"file_name_1": ["loc_str_1"], ...}
+def get_full_file_paths_and_classes_and_functions(structure, current_path=''):
     """
-    file_loc_intervals = dict()
-    topn_content = ''
+    Recursively retrieve all file paths, classes, and functions within a directory structure.
 
-    for pred_file, locs in file_to_locs.items():
-        content = file_contents[pred_file]
-        line_locs, context_intervals = transfer_arb_locs_to_locs(
-            locs,
-            structure,
-            pred_file,
-            context_window,
-            loc_interval,
-            fine_grain_loc_only,
-            file_content=file_contents[pred_file] if pred_file in file_contents else '',
-        )
+    Arguments:
+    structure -- a dictionary representing the directory structure
+    current_path -- the path accumulated so far, used during recursion (default="")
 
-        if len(line_locs) > 0:
-            # Note that if no location is predicted, we exclude this file.
-            file_loc_content = line_wrap_content(
-                content,
-                context_intervals,
-                add_space=add_space,
-                no_line_number=no_line_number,
-                sticky_scroll=sticky_scroll,
-            )
-            topn_content += f'### {pred_file}\n{file_loc_content}\n\n\n'
-            file_loc_intervals[pred_file] = context_intervals
-
-    return topn_content, file_loc_intervals
-
-
-def retrieve_graph(code_graph, graph_tags, search_term, structure, max_tags=100):
-    one_hop_tags = []
-    tags = []
-    for tag in graph_tags:
-        if tag['name'] == search_term and tag['kind'] == 'ref':
-            tags.append(tag)
-        if len(tags) >= max_tags:
-            break
-    # for tag in tags:
-    for i, tag in enumerate(tags):
-        # if i % 3 == 0:
-        logging.info(f'Retrieving graph for {i}/{len(tags)}')
-        # find corresponding calling function/class
-        path = tag['rel_fname'].split('/')
-        s = deepcopy(structure)  # stuck here
-        for p in path:
-            s = s[p]
-        for txt in s['functions']:
-            if tag['line'] >= txt['start_line'] and tag['line'] <= txt['end_line']:
-                one_hop_tags.append((txt, tag['rel_fname']))
-        for txt in s['classes']:
-            for func in txt['methods']:
-                if (
-                    tag['line'] >= func['start_line']
-                    and tag['line'] <= func['end_line']
-                ):
-                    func['text'].insert(0, txt['text'][0])
-                    one_hop_tags.append((func, tag['rel_fname']))
-    return one_hop_tags
+    Returns:
+    A tuple containing:
+    - files: list of full file paths
+    - classes: list of class details with file paths
+    - functions: list of function details with file paths
+    """
+    files = []
+    classes = []
+    functions = []
+    for name, content in structure.items():
+        if isinstance(content, dict):
+            if (
+                'functions' not in content.keys()
+                and 'classes' not in content.keys()
+                and 'text' not in content.keys()
+            ) or not len(content.keys()) == 3:
+                # or guards against case where functions and classes are somehow part of the structure.
+                next_path = f'{current_path}/{name}' if current_path else name
+                (
+                    sub_files,
+                    sub_classes,
+                    sub_functions,
+                ) = get_full_file_paths_and_classes_and_functions(content, next_path)
+                files.extend(sub_files)
+                classes.extend(sub_classes)
+                functions.extend(sub_functions)
+            else:
+                next_path = f'{current_path}/{name}' if current_path else name
+                files.append((next_path, content['text']))
+                if 'classes' in content:
+                    for clazz in content['classes']:
+                        classes.append(
+                            {
+                                'file': next_path,
+                                'name': clazz['name'],
+                                'start_line': clazz['start_line'],
+                                'end_line': clazz['end_line'],
+                                'methods': [
+                                    {
+                                        'name': method['name'],
+                                        'start_line': method['start_line'],
+                                        'end_line': method['end_line'],
+                                    }
+                                    for method in clazz.get('methods', [])
+                                ],
+                            }
+                        )
+                if 'functions' in content:
+                    for function in content['functions']:
+                        function['file'] = next_path
+                        functions.append(function)
+        else:
+            next_path = f'{current_path}/{name}' if current_path else name
+            files.append(next_path)
+    return files, classes, functions
 
 
 def load_instances(
@@ -302,8 +303,12 @@ def zip_directory(directory_path):
     return zip_file_path
 
 
-def get_all_valid_files(instance_id):
-    instance = get_meta_data(instance_id)
+def get_all_valid_files(instance_id=None, instance_data=None):
+    assert instance_id or instance_data
+    if instance_id:
+        instance = get_meta_data(instance_id)
+    elif instance_data:
+        instance = instance_data
     structure = get_repo_structures(instance)
     files, _, _ = get_full_file_paths_and_classes_and_functions(structure)
 

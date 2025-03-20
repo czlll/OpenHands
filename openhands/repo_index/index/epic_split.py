@@ -1,6 +1,7 @@
 import re
 import time
-from typing import Any, Callable, List, Optional, Sequence
+from collections.abc import Callable, Sequence
+from typing import Any, Optional
 
 from llama_index.core.bridge.pydantic import Field
 from llama_index.core.callbacks import CallbackManager
@@ -9,22 +10,13 @@ from llama_index.core.node_parser.node_utils import logger
 from llama_index.core.schema import BaseNode, TextNode
 from llama_index.core.utils import get_tokenizer, get_tqdm_iterable
 
-from openhands.repo_index.codeblocks.codeblocks import (
-    CodeBlock,
-    CodeBlockType,
-    PathTree,
-)
-from openhands.repo_index.codeblocks.parser.python import (
-    PythonParser,
-)
-from openhands.repo_index.index.code_node import (
-    CodeNode,
-)
-from openhands.repo_index.index.settings import (
-    CommentStrategy,
-)
+from openhands.repo_index.codeblocks.parser.create import create_parser
+from openhands.repo_index.codeblocks.codeblocks import CodeBlock, CodeBlockType, PathTree
+from openhands.repo_index.codeblocks.parser.python import PythonParser
+from openhands.repo_index.index.code_node import CodeNode
+from openhands.repo_index.index.settings import CommentStrategy
 
-CodeBlockChunk = List[CodeBlock]
+CodeBlockChunk = list[CodeBlock]
 
 
 def count_chunk_tokens(chunk: CodeBlockChunk) -> int:
@@ -48,49 +40,54 @@ SPLIT_BLOCK_TYPES = [
 
 
 class EpicSplitter(NodeParser):
+    language: str = Field(
+        default="python", description="Language of the code blocks to parse."
+    )
+
     text_splitter: TextSplitter = Field(
-        description='Text splitter to use for splitting non code documents into nodes.'
+        description="Text splitter to use for splitting non code documents into nodes."
     )
 
     include_non_code_files: bool = Field(
-        default=True, description='Whether or not to include non code files.'
+        default=True, description="Whether or not to include non code files."
     )
 
-    non_code_file_extensions: List[str] = Field(
-        default=['md', 'txt'],
-        description='File extensions to consider as non code files.',
+    non_code_file_extensions: list[str] = Field(
+        default=["md", "txt"],
+        description="File extensions to consider as non code files.",
     )
 
     comment_strategy: CommentStrategy = Field(
-        default=CommentStrategy.INCLUDE, description='Comment strategy to use.'
+        default=CommentStrategy.INCLUDE, description="Comment strategy to use."
     )
 
     chunk_size: int = Field(
-        default=1500, description='Chunk size to use for splitting code documents.'
+        default=1500, description="Chunk size to use for splitting code documents."
     )
 
     max_chunks: int = Field(
-        default=100, description='Max number of chunks to split a document into.'
+        default=100, description="Max number of chunks to split a document into."
     )
 
-    min_chunk_size: int = Field(default=256, description='Min tokens to split code.')
+    min_chunk_size: int = Field(default=256, description="Min tokens to split code.")
 
-    max_chunk_size: int = Field(default=2000, description='Max tokens in one chunk.')
+    max_chunk_size: int = Field(default=2000, description="Max tokens in one chunk.")
 
     hard_token_limit: int = Field(
-        default=6000, description='Hard token limit for a chunk.'
+        default=6000, description="Hard token limit for a chunk."
     )
 
-    repo_path: str = Field(default=None, description='Path to the repository.')
+    repo_path: str = Field(default=None, description="Path to the repository.")
 
     index_callback: Optional[Callable] = Field(
-        default=None, description='Callback to call when indexing a code block.'
+        default=None, description="Callback to call when indexing a code block."
     )
 
     # _fallback_code_splitter: Optional[TextSplitter] = PrivateAttr() TODO: Implement fallback when tree sitter fails
 
     def __init__(
         self,
+        language: str = "python",
         chunk_size: int = 750,
         min_chunk_size: int = 100,
         max_chunk_size: int = 1500,
@@ -98,23 +95,24 @@ class EpicSplitter(NodeParser):
         max_chunks: int = 100,
         include_metadata: bool = True,
         include_prev_next_rel: bool = True,
-        text_splitter: Optional[TextSplitter] = None,
+        text_splitter: TextSplitter | None = None,
         index_callback: Optional[Callable[[CodeBlock], None]] = None,
         repo_path: Optional[str] = None,
         comment_strategy: CommentStrategy = CommentStrategy.ASSOCIATE,
         # fallback_code_splitter: Optional[TextSplitter] = None,
         include_non_code_files: bool = True,
         tokenizer: Optional[Callable] = None,
-        non_code_file_extensions: Optional[List[str]] = None,
-        callback_manager: Optional[CallbackManager] = None,
+        non_code_file_extensions: list[str] | None = None,
+        callback_manager: CallbackManager | None = None,
     ) -> None:
-        callback_manager = callback_manager or CallbackManager([])
         if non_code_file_extensions is None:
-            non_code_file_extensions = ['md', 'txt']
+            non_code_file_extensions = ["md", "txt"]
+        callback_manager = callback_manager or CallbackManager([])
 
         # self._fallback_code_splitter = fallback_code_splitter
 
         super().__init__(
+            language=language,
             chunk_size=chunk_size,
             chunk_overlap=0,
             text_splitter=text_splitter or TokenTextSplitter(),
@@ -134,38 +132,38 @@ class EpicSplitter(NodeParser):
 
     @classmethod
     def class_name(cls):
-        return 'GhostcoderNodeParser'
+        return "GhostcoderNodeParser"
 
     def _parse_nodes(
         self,
         nodes: Sequence[BaseNode],
         show_progress: bool = False,
         **kwargs: Any,
-    ) -> List[BaseNode]:
-        nodes_with_progress = get_tqdm_iterable(nodes, show_progress, 'Parsing nodes')
+    ) -> list[BaseNode]:
+        nodes_with_progress = get_tqdm_iterable(nodes, show_progress, "Parsing nodes")
 
-        all_nodes: List[BaseNode] = []
+        all_nodes: list[BaseNode] = []
 
         for node in nodes_with_progress:
-            file_path = node.metadata.get('file_path')
+            file_path = node.metadata.get("file_path")
             content = node.get_content()
 
             try:
-                # TODO: Derive language from file extension
                 starttime = time.time_ns()
 
-                parser = PythonParser(index_callback=self.index_callback)
+                # TODO: Derive language from file extension
+                parser = create_parser(language=self.language, index_callback=self.index_callback)
                 codeblock = parser.parse(content, file_path=file_path)
 
                 parse_time = time.time_ns() - starttime
                 if parse_time > 1e9:
                     logger.warning(
-                        f'Parsing file {file_path} took {parse_time / 1e9:.2f} seconds.'
+                        f"Parsing file {file_path} took {parse_time / 1e9:.2f} seconds."
                     )
 
             except Exception as e:
                 logger.warning(
-                    f'Failed to use epic splitter to split {file_path}. Fallback to treesitter_split(). Error: {e}'
+                    f"Failed to use epic splitter to split {file_path}. Fallback to treesitter_split(). Error: {e}"
                 )
                 # TODO: Fall back to treesitter or text split
                 continue
@@ -175,10 +173,10 @@ class EpicSplitter(NodeParser):
             parse_time = time.time_ns() - starttime
             if parse_time > 1e8:
                 logger.warning(
-                    f'Splitting file {file_path} took {parse_time / 1e9:.2f} seconds.'
+                    f"Splitting file {file_path} took {parse_time / 1e9:.2f} seconds."
                 )
             if len(chunks) > 100:
-                logger.info(f'Splitting file {file_path} in {len(chunks)} chunks')
+                logger.info(f"Splitting file {file_path} in {len(chunks)} chunks")
 
             starttime = time.time_ns()
             for chunk in chunks:
@@ -190,21 +188,21 @@ class EpicSplitter(NodeParser):
             parse_time = time.time_ns() - starttime
             if parse_time > 1e9:
                 logger.warning(
-                    f'Create nodes for file {file_path} took {parse_time / 1e9:.2f} seconds.'
+                    f"Create nodes for file {file_path} took {parse_time / 1e9:.2f} seconds."
                 )
         return all_nodes
 
     def _chunk_contents(
-        self, codeblock: CodeBlock, file_path: Optional[str] = None
-    ) -> List[CodeBlockChunk]:
+        self, codeblock: CodeBlock | None = None, file_path: Optional[str] = None
+    ) -> list[CodeBlockChunk]:
         tokens = codeblock.sum_tokens()
         if tokens == 0:
-            logger.debug(f'Skipping file {file_path} because it has no tokens.')
+            logger.debug(f"Skipping file {file_path} because it has no tokens.")
             return []
 
         if codeblock.find_errors():
             logger.warning(
-                f'Failed to use spic splitter to split {file_path}. {len(codeblock.find_errors())} codeblocks with type ERROR. Fallback to treesitter_split()'
+                f"Failed to use spic splitter to split {file_path}. {len(codeblock.find_errors())} codeblocks with type ERROR. Fallback to treesitter_split()"
             )
             # TODO: Fall back to treesitter or text split
             return []
@@ -213,7 +211,7 @@ class EpicSplitter(NodeParser):
             for child in codeblock.children:
                 if (
                     child.type == CodeBlockType.COMMENT
-                    and 'generated' in child.content.lower()
+                    and "generated" in child.content.lower()
                 ):  # TODO: Make a generic solution to detect files that shouldn't be indexed. Maybe ask an LLM?
                     logger.info(
                         f"File {file_path} has {tokens} tokens and the word 'generated' in the first comments,"
@@ -232,9 +230,9 @@ class EpicSplitter(NodeParser):
     def _chunk_block(
         self, codeblock: CodeBlock, file_path: Optional[str] = None
     ) -> list[CodeBlockChunk]:
-        chunks: List[CodeBlockChunk] = []
-        current_chunk: List[CodeBlock] = []
-        comment_chunk: List[CodeBlock] = []
+        chunks: list[CodeBlockChunk] = []
+        current_chunk = []
+        comment_chunk = []
 
         parent_tokens = count_parent_tokens(codeblock)
 
@@ -257,8 +255,8 @@ class EpicSplitter(NodeParser):
                 if child.tokens > self.max_chunk_size:
                     start_content = child.content[:100]
                     logger.warning(
-                        f'Skipping code block {child.path_string()} in {file_path} as it has {child.tokens} tokens which is'
-                        f' more than chunk size {self.chunk_size}. Content: {start_content}...'
+                        f"Skipping code block {child.path_string()} in {file_path} as it has {child.tokens} tokens which is"
+                        f" more than chunk size {self.chunk_size}. Content: {start_content}..."
                     )
                     continue
 
@@ -325,7 +323,7 @@ class EpicSplitter(NodeParser):
 
         return self._merge_chunks(chunks)
 
-    def _merge_chunks(self, chunks: List[CodeBlockChunk]) -> List[CodeBlockChunk]:
+    def _merge_chunks(self, chunks: list[CodeBlockChunk]) -> list[CodeBlockChunk]:
         while True:
             merged_chunks = []
             should_continue = False
@@ -391,7 +389,7 @@ class EpicSplitter(NodeParser):
 
         return chunks
 
-    def _create_path_tree(cls, blocks: List[CodeBlock]) -> PathTree:
+    def _create_path_tree(self, blocks: list[CodeBlock]) -> PathTree:
         path_tree = PathTree()
         for block in blocks:
             path_tree.add_to_tree(block.full_path())
@@ -399,44 +397,46 @@ class EpicSplitter(NodeParser):
 
     def _ignore_comment(self, codeblock: CodeBlock) -> bool:
         return (
-            bool(
-                re.search(r'(?i)copyright|license|author', codeblock.content)
-            )  # re.search(r'(?i)copyright|license|author', codeblock.content)
+            re.search(r"(?i)copyright|license|author", codeblock.content)
             or not codeblock.content
         )
 
     def _to_context_string(self, codeblock: CodeBlock, path_tree: PathTree) -> str:
-        contents = ''
+        contents = ""
 
         if codeblock.pre_lines:
-            contents += '\n' * (codeblock.pre_lines - 1)
+            contents += "\n" * (codeblock.pre_lines - 1)
             for i, line in enumerate(codeblock.content_lines):
                 if i == 0 and line:
-                    contents += '\n' + codeblock.indentation + line
+                    contents += "\n" + codeblock.indentation + line
                 elif line:
-                    contents += '\n' + line
+                    contents += "\n" + line
                 else:
-                    contents += '\n'
+                    contents += "\n"
         else:
             contents += codeblock.pre_code + codeblock.content
 
         has_outcommented_code = False
-        for i, child in enumerate(codeblock.children):
-            assert child is not None and child.identifier is not None
+        for _i, child in enumerate(codeblock.children):
             child_tree = path_tree.child_tree(child.identifier)
             if child_tree and child_tree.show:
-                if has_outcommented_code and child.type not in [
-                    CodeBlockType.COMMENT,
-                    CodeBlockType.COMMENTED_OUT_CODE,
-                ]:
-                    if codeblock.type not in [
+                if (
+                    has_outcommented_code
+                    and child.type
+                    not in [
+                        CodeBlockType.COMMENT,
+                        CodeBlockType.COMMENTED_OUT_CODE,
+                    ]
+                    and codeblock.type
+                    not in [
                         CodeBlockType.CLASS,
                         CodeBlockType.MODULE,
                         CodeBlockType.TEST_SUITE,
-                    ]:
-                        contents += child.create_commented_out_block(
-                            '... other code'
-                        ).to_string()
+                    ]
+                ):
+                    contents += child.create_commented_out_block(
+                        "... other code"
+                    ).to_string()
                 contents += self._to_context_string(
                     codeblock=child, path_tree=child_tree
                 )
@@ -457,11 +457,11 @@ class EpicSplitter(NodeParser):
             CodeBlockType.MODULE,
             CodeBlockType.TEST_SUITE,
         ]:
-            contents += child.create_commented_out_block('... other code').to_string()
+            contents += child.create_commented_out_block("... other code").to_string()
 
         return contents
 
-    def _contains_block_paths(self, codeblock: CodeBlock, block_paths: List[List[str]]):
+    def _contains_block_paths(self, codeblock: CodeBlock, block_paths: list[list[str]]):
         return [
             block_path
             for block_path in block_paths
@@ -469,16 +469,16 @@ class EpicSplitter(NodeParser):
         ]
 
     def _create_node(
-        self, content: str, node: BaseNode, chunk: Optional[CodeBlockChunk] = None
-    ) -> Optional[TextNode]:
+        self, content: str, node: BaseNode, chunk: CodeBlockChunk | None = None
+    ) -> TextNode | None:
         metadata = {}
         metadata.update(node.metadata)
 
         node_id = node.id_
 
         if chunk:
-            metadata['start_line'] = chunk[0].start_line
-            metadata['end_line'] = chunk[-1].end_line
+            metadata["start_line"] = chunk[0].start_line
+            metadata["end_line"] = chunk[-1].end_line
 
             # TODO: Change this when EpicSplitter is adjusted to use the span concept natively
             span_ids = set(
@@ -488,17 +488,17 @@ class EpicSplitter(NodeParser):
                     if block.belongs_to_span
                 ]
             )
-            metadata['span_ids'] = list(span_ids)
+            metadata["span_ids"] = list(span_ids)
 
-            node_id += f'_{chunk[0].path_string()}_{chunk[-1].path_string()}'
+            node_id += f"_{chunk[0].path_string()}_{chunk[-1].path_string()}"
 
-        content = content.strip('\n')
+        content = content.strip("\n")
 
         tokens = get_tokenizer()(content)
-        metadata['tokens'] = len(tokens)
+        metadata["tokens"] = len(tokens)
 
         excluded_embed_metadata_keys = node.excluded_embed_metadata_keys.copy()
-        excluded_embed_metadata_keys.extend(['start_line', 'end_line', 'tokens'])
+        excluded_embed_metadata_keys.extend(["start_line", "end_line", "tokens"])
 
         return CodeNode(
             id_=node_id,

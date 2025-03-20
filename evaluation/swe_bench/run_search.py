@@ -283,7 +283,7 @@ def initialize_runtime(
         # instance_id = instance['instance_id']
         assert_and_raise(
             os.path.exists(index_dir),
-            f'No index data exist: {instance['instance_id']}',
+            f"No index data exist: {instance['instance_id']}",
         )
         # runtime.copy_to(f'{index_dir}/blocks_by_class_name.json', '/repo_data/index_data/')
         # runtime.copy_to(f'{index_dir}/blocks_by_function_name.json', '/repo_data/index_data/')

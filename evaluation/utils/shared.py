@@ -91,20 +91,30 @@ class EvalException(Exception):
 
 def codeact_user_response(
     state: State,
-    encapsulate_solution: bool = False,
+    encapsulate_solution: bool = True,
     try_parse: Callable[[Action], str] | None = None,
 ) -> str:
     encaps_str = (
         (
-            'Please encapsulate your final answer (answer ONLY) within <solution> and </solution>.\n'
-            'For example: The answer to the question is <solution> 42 </solution>.\n'
+            'Please list the locations requiring modification (location ONLY), wrapped with triple backticks ``` \n'
+            'For example: \n'
+            '```\n'
+            'full_path1/file1.py\n'
+            'line: 10\n'
+            'class: MyClass1\n'
+            'function: my_function\n\n'
+
+            'full_path2/file2.py\n'
+            'variable: GLOBAL_VARIABLE_A\n'
+            'function: MyClass2.my_method\n'
+            '```\n'
         )
         if encapsulate_solution
         else ''
     )
     msg = (
         'Please continue working on the task on whatever approach you think is suitable.\n'
-        'If you think you have solved the task, please first send your answer to user through message and then finish the interaction.\n'
+        'If you think you have solved the task, please send your final answer to user and meanwhile finish the interaction.\n'
         f'{encaps_str}'
         'IMPORTANT: YOU SHOULD NEVER ASK FOR HUMAN HELP.\n'
     )

@@ -1,3 +1,5 @@
+import collections
+
 def add_new_file(new_file, valid_files, found_files=None):
     if new_file in valid_files and new_file not in found_files:
         found_files.append(new_file)
@@ -164,25 +166,25 @@ def convert_to_loc_related_list(loc_related_dict, file_list):
     return loc_related_list
 
 
-def convert_to_loc_edit_list(loc_edit_dict, file_list):
-    if not isinstance(loc_edit_dict, list):
-        loc_edit_dict = [loc_edit_dict]
-        file_list = [file_list]
+# def convert_to_loc_edit_list(loc_edit_dict, file_list):
+#     if not isinstance(loc_edit_dict, list):
+#         loc_edit_dict = [loc_edit_dict]
+#         file_list = [file_list]
 
-    loc_edit_list = []
-    for i, sample in enumerate(loc_edit_dict):
-        sample_list = []
-        for file in file_list[i]:
-            data = []
-            if file in sample:
-                for modual in sample[file]:
-                    data.append(modual)
-                    data += sample[file][modual]
-                sample_list.append(['\n'.join(data)])
-            else:
-                sample_list.append([''])
-        loc_edit_list.append(sample_list)
-    return loc_edit_list
+#     loc_edit_list = []
+#     for i, sample in enumerate(loc_edit_dict):
+#         sample_list = []
+#         for file in file_list[i]:
+#             data = []
+#             if file in sample:
+#                 for modual in sample[file]:
+#                     data.append(modual)
+#                     data += sample[file][modual]
+#                 sample_list.append(['\n'.join(data)])
+#             else:
+#                 sample_list.append([''])
+#         loc_edit_list.append(sample_list)
+#     return loc_edit_list
 
 
 import re
@@ -210,8 +212,8 @@ def extract_python_file_path(line, valid_folders):
         matched_fp = match.group(0)
         start_index = len(matched_fp)
         for folder in valid_folders:
-            if folder in matched_fp:
-                cur_start_index = matched_fp.index(folder)
+            if f'{folder}/' in matched_fp:
+                cur_start_index = matched_fp.index(f'{folder}/')
                 if cur_start_index < start_index:
                     start_index = cur_start_index
         if start_index < len(matched_fp):
@@ -258,3 +260,61 @@ def merge_sample_locations(found_files, found_edit_locs):
 
     # merged_loc_edit_list = convert_to_loc_edit_list([merged_found_edit_locs],[merged_found_files])
     return merged_found_files, merged_loc_edit_list
+
+
+def parse_raw_loc_output(raw_output, valid_files, file_list=None, loc_edit_dict=None):
+    valid_top_folder = []
+    for fn in valid_files:
+        folder = fn.split('/')[0]
+        if folder not in valid_top_folder:
+            valid_top_folder.append(folder)
+    
+    # Remove the triple backticks and any surrounding whitespace
+    raw_output = raw_output.strip('` \n')
+    
+    # Initialize lists
+    if not file_list:
+        file_list = []
+    if not loc_edit_dict:
+        # Initialize the dictionary to store the edit file information
+        loc_edit_dict = collections.defaultdict(list)
+    
+    current_file = None
+    # Split the input data into lines
+    lines = raw_output.strip().split('\n')
+    for line in lines:
+        line = line.strip().strip(':').strip()
+        if not line:
+            continue  # Skip empty lines
+
+        if line.endswith('.py'):
+            fn = extract_python_file_path(line, valid_top_folder)
+            if not fn or fn not in valid_files:
+                current_file = None
+                continue
+
+            current_file = fn
+            if current_file not in file_list:
+                file_list.append(current_file)
+
+        elif line and any(
+            line.startswith(w)
+            for w in ["function:", "class:", 'method:', 
+                      "variable:", 'variables:', "line:", "lines:"]
+        ):
+            if current_file and line not in loc_edit_dict[current_file]:
+                loc_edit_dict[current_file].append(line)
+
+    return file_list, loc_edit_dict
+
+
+def convert_to_loc_edit_list(loc_edit_dict, file_list):
+    
+    loc_edit_list = [[] for _ in range(len(file_list))]
+    for i, file in enumerate(file_list):
+        if file in loc_edit_dict:
+            loc_edit_list[i] = ['\n'.join(loc_edit_dict[file])]
+        else:
+            loc_edit_list[i] = [""]
+                
+    return loc_edit_list

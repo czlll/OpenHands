@@ -18,8 +18,8 @@ __all__ = [
     'AgentSkillsPlugin',
     'JupyterRequirement',
     'JupyterPlugin',
-    'LocationToolsPlugin',
-    'LocationToolsRequirement',
+    # 'LocationToolsPlugin',
+    # 'LocationToolsRequirement',
 ]
 
 ALL_PLUGINS = {'jupyter': JupyterPlugin, 'agent_skills': AgentSkillsPlugin}

@@ -1,7 +1,7 @@
 from inspect import signature
 
 from openhands.runtime.plugins.agent_skills import file_ops, file_reader
-from openhands.runtime.plugins.agent_skills import repo_ops
+# from openhands.runtime.plugins.agent_skills import repo_ops
 
 from openhands.runtime.plugins.agent_skills.utils.dependency import import_functions
 
@@ -11,10 +11,10 @@ import_functions(
 import_functions(
     module=file_reader, function_names=file_reader.__all__, target_globals=globals()
 )
-import_functions(
-    module=repo_ops, function_names=repo_ops.__all__, target_globals=globals()
-)
-__all__ = file_ops.__all__ + file_reader.__all__ + repo_ops.__all__
+# import_functions(
+#     module=repo_ops, function_names=repo_ops.__all__, target_globals=globals()
+# )
+__all__ = file_ops.__all__ + file_reader.__all__ # + repo_ops.__all__
 
 DOCUMENTATION = ''
 for func_name in __all__:
